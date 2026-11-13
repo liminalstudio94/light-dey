@@ -5,6 +5,7 @@
 - Eight explicit map states with marker styles (confirmed ring, reported, dashed estimate, grey unknown), legend, per-state filters.
 - "Where this comes from" attribution on area pages; Unknown explains why and asks to confirm; NISO grid card on the homepage; `/sources` page.
 ### Fixed
+- Production pages hung: postgres.js pipelined queries through the Supabase transaction pooler and wedged the pool when the area page loaded the overview twice. Set `max_pipeline: 1` and cache `getOverview` per request.
 - Share buttons caused a hydration mismatch (URL built from `window` during render).
 - Share text never upgrades reported → confirmed or estimate → live.
 

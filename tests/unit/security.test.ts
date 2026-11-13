@@ -59,6 +59,18 @@ describe("database migrations", () => {
   });
 });
 
+describe("database client", () => {
+  // Pipelined queries through the Supabase transaction pooler wedged the whole pool in production (2026-11-13).
+  it("disables query pipelining and prepared statements for the transaction pooler", () => {
+    const code = readFileSync("src/lib/store/postgres.ts", "utf8");
+    expect(code).toMatch(/max_pipeline: 1/);
+    expect(code).toMatch(/prepare: false/);
+  });
+  it("loads the overview once per request", () => {
+    expect(readFileSync("src/lib/server/data.ts", "utf8")).toMatch(/export const getOverview = cache\(/);
+  });
+});
+
 describe("source registry", () => {
   it("only marks sources active when they are live or derived", () => {
     for (const s of SOURCES) if (s.active) expect(["live", "derived"], s.id).toContain(s.integration);

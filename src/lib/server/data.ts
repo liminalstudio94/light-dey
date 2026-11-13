@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { AREAS } from "../areas";
 import { gridContextFrom, lagosHour, resolveAreaStatus } from "../evidence";
 import { historyStats } from "../history";
@@ -10,7 +11,10 @@ export const MAP_STATES: MapState[] = ["CONFIRMED_ON", "COMMUNITY_ON", "CONFIRME
 
 export type { Overview } from "../types";
 
-export async function getOverview(now = new Date()): Promise<Overview> {
+/** Cached per request, so generateMetadata and the page share one load. */
+export const getOverview = cache(loadOverview);
+
+async function loadOverview(now = new Date()): Promise<Overview> {
   const store = getStore();
   const [reports, observations, patterns] = await Promise.all([
     store.listReports({ since: new Date(now.getTime() - 24 * 3_600_000) }),
