@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased] — evidence engine (LD-040)
+### Added
+- Evidence model migration: sources, source_runs, observations (+ neighbourhood links), disco_service_areas, verification_events, partner_keys, status_snapshots, hourly_patterns — all in `lightdey`, RLS on.
+- Source registry (`src/lib/sources/registry.ts`) and official-only DisCo mapping (`src/lib/sources/discos.ts`), seeded by `npm run gen:seed`.
+- Evidence engine (`src/lib/evidence.ts`): official > verified > community > estimate > unknown, with freshness expiry, dedupe and attribution. New `mapState` on every area status.
+- Seed migrations re-apply when their content changes.
+
 ## [0.2.0] — 2026-11-13
 ### Added
 - Supabase Postgres persistence (`PostgresStore`) in an isolated `lightdey` schema; migration runner `npm run db:migrate`.

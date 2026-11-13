@@ -2,6 +2,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AREAS } from "@/lib/areas";
+import { DISCO_AREAS } from "@/lib/sources/discos";
+import { SOURCES } from "@/lib/sources/registry";
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -34,7 +36,7 @@ describe("database migrations", () => {
   const sql = readdirSync("supabase/migrations").map((f) => readFileSync(join("supabase/migrations", f), "utf8")).join("\n");
   it("enables RLS on every table", () => {
     const tables = [...sql.matchAll(/create table lightdey\.(\w+)/g)].map((m) => m[1]);
-    expect(tables.length).toBe(13);
+    expect(tables.length).toBeGreaterThanOrEqual(22);
     for (const t of tables) expect(sql).toContain(`alter table lightdey.${t} enable row level security`);
   });
   it("keeps everything inside the lightdey schema (shared database)", () => {
@@ -47,5 +49,23 @@ describe("database migrations", () => {
   });
   it("seed matches src/lib/areas.ts", () => {
     for (const a of AREAS) expect(sql).toContain(`('${a.id}', '${a.name.replace(/'/g, "''")}'`);
+  });
+  it("seeds every registry source and DisCo mapping", () => {
+    for (const s of SOURCES) expect(sql).toContain(`('${s.id}', `);
+    for (const d of DISCO_AREAS) expect(sql).toContain(`('${d.areaId}', '${d.disco}'`);
+  });
+  it("only stores hashes of partner keys", () => {
+    expect(sql).toMatch(/key_hash text not null unique check \(char_length\(key_hash\) = 64\)/);
+  });
+});
+
+describe("source registry", () => {
+  it("only marks sources active when they are live or derived", () => {
+    for (const s of SOURCES) if (s.active) expect(["live", "derived"], s.id).toContain(s.integration);
+  });
+  // Yaba stays unmapped until an official source names its DisCo; update this test with the citation if that changes.
+  it("DisCo mappings cite an official source and never include Yaba", () => {
+    for (const d of DISCO_AREAS) expect(d.sourceUrl).toMatch(/^https:\/\//);
+    expect(DISCO_AREAS.map((d) => d.areaId)).not.toContain("yaba");
   });
 });
