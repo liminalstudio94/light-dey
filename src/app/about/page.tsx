@@ -8,13 +8,17 @@ export default function About() {
   const c = STATUS_CONFIG;
   return (
     <Prose title="How Light Dey? works">
-      <p>Light Dey? is a community-powered electricity status platform for Lagos. It does not receive data from any electricity distribution company. Every status comes from reports by people in that area.</p>
-      <h2>What the colours mean</h2>
+      <p>
+        Light Dey? is a community-powered electricity status platform for Lagos. Most statuses come from people in each area. We also read the official national grid
+        figures published by NISO, which can confirm outages. See <a className="text-brand" href="/sources">data sources</a> for every source and how far we trust it.
+      </p>
+      <h2>What the map shows</h2>
       <ul>
-        <li><strong className="text-on">Green — Light dey:</strong> at least {c.confirmationThreshold} different people reported electricity in the last {c.reportingWindowMinutes} minutes.</li>
-        <li><strong className="text-off">Red — No light:</strong> at least {c.confirmationThreshold} different people reported an outage in the last {c.reportingWindowMinutes} minutes.</li>
-        <li><strong className="text-unsure">Yellow — Uncertain:</strong> recent reports disagree and neither side has {c.confirmationThreshold} confirmations.</li>
-        <li><strong className="text-unknown">Grey — Unknown:</strong> not enough recent reports.</li>
+        <li><strong>Confirmed outage / Confirmed light dey</strong> (dark ring): official data or verified reporters.</li>
+        <li><strong className="text-on">Reported: light dey</strong> / <strong className="text-off">Reported: no light</strong>: at least {c.confirmationThreshold} different people agreed in the last {c.reportingWindowMinutes} minutes. Not official.</li>
+        <li><strong className="text-unsure">Conflicting reports</strong>: sources or neighbours disagree right now.</li>
+        <li><strong>Estimate</strong> (dashed): a pattern from past reports at this time of day. Never live.</li>
+        <li><strong className="text-unknown">Unknown</strong>: not enough verified data. We say why on each area page.</li>
       </ul>
       <h2>Freshness</h2>
       <p>Fresh: up to {c.freshness.freshMaxMinutes} min · Recent: up to {c.freshness.recentMaxMinutes} min · Ageing: up to {c.freshness.ageingMaxMinutes} min · Stale: older. Stale reports never count as live.</p>

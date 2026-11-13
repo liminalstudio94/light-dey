@@ -70,8 +70,16 @@ scripts/                 Dev scripts (e.g. gen-seed.ts).
 - Never claim a test passed without running it.
 - Before a PR: `npm run check` (typecheck + lint + tests). UI changes: also a browser check at 390px and 1366px.
 
+## 9b. Data sources
+- Every source must be in `src/lib/sources/registry.ts` with tier, usage and integration status, and documented in SOURCES.md, before any code uses it.
+- Only integrate sources verified as accessible without bypassing logins, terms or robots rules. Record the check in `notes`.
+- Parsers fail closed (throw), never write partial or guessed data, and ship with a real fixture.
+- DisCo mappings need an official citation. Never infer them.
+- Grid figures can confirm outages only; never "light dey".
+
 ## 10. Prohibited
-- Fake/sample electricity reports in production paths.
+- Fake/sample electricity reports or observations in production paths.
+- Hard-coding any area's status.
 - Hardcoded thresholds outside `config.ts`.
 - New dependencies without a stated reason in the PR.
 - Disabling lint rules or TS checks to get green.

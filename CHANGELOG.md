@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] — evidence UI (LD-043)
+### Added
+- Eight explicit map states with marker styles (confirmed ring, reported, dashed estimate, grey unknown), legend, per-state filters.
+- "Where this comes from" attribution on area pages; Unknown explains why and asks to confirm; NISO grid card on the homepage; `/sources` page.
+### Fixed
+- Share buttons caused a hydration mismatch (URL built from `window` during render).
+- Share text never upgrades reported → confirmed or estimate → live.
+
 ## [Unreleased] — ingestion (LD-041)
 ### Added
 - Adapters for the two verified public sources: NISO NIGGRID DisCo load profile (10 min) and Ikeja Electric notices RSS (hourly), with strict parsers that fail closed.

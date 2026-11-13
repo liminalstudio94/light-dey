@@ -2,7 +2,7 @@
 
 **No Light? Know Light. Check Before You Go.**
 
-Community-reported electricity status for Lagos neighbourhoods. Neighbours tap *Light dey* or *No light*; an area turns green or red only when 3 different people agree within the hour.
+Evidence-based electricity status for Lagos neighbourhoods. Official NISO grid data confirms outages, neighbours report *Light dey* or *No light* (3 independent people within the hour), and every status shows its source, time and confidence. When evidence is missing, we say Unknown.
 
 ```bash
 npm install
@@ -13,6 +13,7 @@ npm run db:migrate # apply SQL migrations (needs POSTGRES_URL_NON_POOLING)
 ```
 
 - How it works & rules: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Data sources (live / awaiting / unavailable): [SOURCES.md](SOURCES.md)
 - Engineering rules: [AGENTS.md](AGENTS.md)
 - Plan: [ROADMAP.md](ROADMAP.md) · [BACKLOG.md](BACKLOG.md)
 - Tests: [TESTING.md](TESTING.md) · Security: [SECURITY.md](SECURITY.md)

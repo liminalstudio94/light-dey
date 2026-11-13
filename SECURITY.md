@@ -11,6 +11,9 @@ Please report privately to the maintainers (see /contact). Do not open a public 
 - POST endpoints reject cross-origin `Origin` headers.
 - IPs are HMAC-hashed; raw IPs are not stored. Location is optional and only stored with the report.
 
+- `/api/cron/refresh` requires `CRON_SECRET` (timing-safe compare). `/api/ingest/observations` requires a per-partner key; only SHA-256 hashes are stored, keys can be revoked, and writes are limited to 120 per key per hour.
+- Outbound fetches go only to the registered source URLs, with a User-Agent that carries no personal data. Parsers fail closed.
+
 ## Known limitations (tracked in BACKLOG.md)
 - Anonymous ids can be rotated by clearing cookies. Mitigated by per-network caps; CAPTCHA + reputation pending (LD-013, LD-015).
 - Rate-limit check and insert are not atomic (LD-012).

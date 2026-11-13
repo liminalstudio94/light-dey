@@ -36,6 +36,32 @@ Supabase via Vercel marketplace (shared `dropscope-db`, isolated `lightdey` sche
 ### LD-011 — Deploy to Vercel · P0 · done (PR #1)
 REPORTER_HASH_SECRET set; production smoke test of report → status.
 
+### LD-040 — Evidence model & engine · P0 · done (PR #2)
+### LD-041 — Source adapters (NISO, Ikeja Electric) & scheduled refresh · P0 · done (PR #3)
+### LD-042 — Partner / verified-reporter ingestion API · P0 · done (PR #3)
+### LD-043 — Evidence UI: map states, attribution, grid card, /sources, confirm prompt · P0 · done (PR #4)
+### LD-045 — CI + Qodo config · P0 · done (PR #3)
+
+## Next — evidence (in implementation order, one PR each)
+### LD-046 — Turn on the 10-minute schedule · P0 · needs repo secrets
+Set GitHub secrets `LIGHTDEY_URL` + `CRON_SECRET` (same as Vercel). Acceptance: `source_runs` shows `niso_niggrid` ok at least every 15 min for 24h. Tests: n/a (ops); verify via SQL.
+
+### LD-047 — Source health on /sources · P1 · depends LD-046
+Show last success/error per source from `source_runs`; badge a source "stale" when it has no success in 3× its interval. Acceptance: a disabled source shows stale within 30 min. Tests: health calculation unit test.
+
+### LD-048 — First verified reporters pilot (Yaba, Ikeja, Lekki) · P1
+Process doc + issue keys to 2–3 vetted reporters per area. Acceptance: `CONFIRMED_*` appears only when 2 agree. Tests: existing engine tests; add an end-to-end partner API → status test against Postgres (LD-033).
+
+### LD-049 — Expand official DisCo mapping · P1
+Use NERC energy-cap PDFs (feeders per district/business unit) to map more areas, each with a citation. Acceptance: every new mapping has a source URL and a test; no mapping by guesswork. Tests: registry tests.
+
+### LD-050 — DisCo partner outreach (Eko, Ikeja) · P1
+Request a machine-readable outage/restoration feed. On approval: a tier-1 partner key or a new adapter. Acceptance: signed approval recorded in registry notes.
+
+### LD-051 — Flag a report from the evidence panel · P1 · depends LD-016
+### LD-052 — Notices: OCR-free matching of feeder names to areas · P2 · depends LD-049
+### LD-053 — Include official outages in history charts · P2
+
 ## Todo
 ### LD-031 — PostGIS + sourced boundaries · P2
 Enable PostGIS (ideally on a dedicated project), migrate lat/lng to geography, nearest-area queries in SQL.
@@ -99,5 +125,4 @@ OSM standard tiles are for light use only.
 ### LD-029 — Expand neighbourhood coverage & verify coordinates · P1
 Review each centre point against OSM; add more areas; add sourced boundaries where available.
 
-### LD-030 — CI on GitHub Actions + Qodo review · P1
-Run `npm run check` + build on PRs.
+### LD-030 — CI on GitHub Actions + Qodo review · done (see LD-045)

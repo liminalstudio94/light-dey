@@ -7,7 +7,7 @@ import { HistoryPanel } from "@/components/HistoryPanel";
 import { ReportPanel } from "@/components/ReportPanel";
 import { getArea } from "@/lib/areas";
 import { getOverview } from "@/lib/server/data";
-import { STATE_LABEL } from "@/lib/status";
+import { MAP_STATE_META } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +19,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!area) return {};
   const overview = await getOverview();
   const s = overview.statuses.find((x) => x.areaId === id);
-  const label = s ? STATE_LABEL[s.state] : "Unknown";
+  const label = s?.mapState ? MAP_STATE_META[s.mapState].label : "Unknown";
   return {
     title: `Is there light in ${area.name}? ${label}`,
-    description: `Live community-reported electricity status for ${area.name}, ${area.lga} LGA, Lagos. ${s?.recentReports ?? 0} reports in the last hour.`,
+    description: `Live community-reported electricity status for ${area.name}, ${area.lga} LGA, Lagos. Sources and confidence shown for every status.`,
   };
 }
 
@@ -41,10 +41,10 @@ export default async function AreaPage({ params }: Props) {
       </header>
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <div>
-          <AreaLive areaId={area.id} initial={overview} mobileReport={<ReportPanel defaultAreaId={area.id} lockArea />} />
+          <AreaLive areaId={area.id} initial={overview} mobileReport={<div id="report" className="scroll-mt-20"><ReportPanel defaultAreaId={area.id} lockArea /></div>} />
         </div>
         <aside className="hidden lg:sticky lg:top-20 lg:block lg:self-start">
-          <ReportPanel defaultAreaId={area.id} lockArea />
+          <div id="report-desktop" className="scroll-mt-20"><ReportPanel defaultAreaId={area.id} lockArea /></div>
         </aside>
       </div>
       <div className="mt-14">

@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { MapPin, Users } from "lucide-react";
 import { getArea } from "@/lib/areas";
-import { CONFIDENCE_LABEL, FRESHNESS_LABEL, timeAgo } from "@/lib/format";
+import { CONFIDENCE_LABEL, FRESHNESS_LABEL, TIER_LABEL, timeAgo } from "@/lib/format";
 import type { AreaStatus } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
 
 export function AreaStatusCard({ status, now }: { status: AreaStatus; now: number }) {
   const area = getArea(status.areaId);
   if (!area) return null;
-  const unconfirmed = status.state === "UNKNOWN" && status.leaning;
+  const decisive = status.evidence?.find((e) => e.role === "decisive" || e.role === "estimate");
+  const unknown = status.mapState ? status.mapState === "UNKNOWN" : status.state === "UNKNOWN";
   return (
     <Link href={`/area/${area.id}`} className="group block rounded-2xl border border-line bg-surface p-4 transition hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-12px_rgba(15,17,21,0.25)]">
       <div className="flex items-start justify-between gap-2">
@@ -18,7 +19,7 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
             <MapPin className="h-3 w-3" aria-hidden /> {area.lga} LGA
           </p>
         </div>
-        <StatusBadge state={status.state} />
+        <StatusBadge state={status.state} mapState={status.mapState} />
       </div>
       <dl className="mt-4 grid grid-cols-3 gap-2 text-xs">
         <div>
@@ -35,9 +36,17 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
         </div>
       </dl>
       <p className="mt-3 border-t border-line pt-3 text-xs text-ink-2">
-        {unconfirmed
-          ? `1–2 people say ${status.leaning === "on" ? "light dey" : "no light"} · needs 3 to confirm`
-          : `${CONFIDENCE_LABEL[status.confidence]} · ${FRESHNESS_LABEL[status.freshness]}`}
+        {decisive ? (
+          <>
+            <span className="font-semibold">{TIER_LABEL[decisive.tier]}</span> · {decisive.tier === 3 ? `${decisive.count} independent reports` : decisive.tier === 4 ? "not live" : decisive.sourceName} · {CONFIDENCE_LABEL[status.confidence]}
+          </>
+        ) : unknown && status.leaning ? (
+          `1–2 people say ${status.leaning === "on" ? "light dey" : "no light"} · needs 3 to confirm`
+        ) : unknown ? (
+          "Not enough verified data — tap to report"
+        ) : (
+          `${CONFIDENCE_LABEL[status.confidence]} · ${FRESHNESS_LABEL[status.freshness]}`
+        )}
       </p>
     </Link>
   );
