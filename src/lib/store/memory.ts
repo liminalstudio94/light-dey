@@ -85,4 +85,11 @@ export class MemoryStore implements DataStore {
   async findPartnerKey(keyHash: string) {
     return this.partnerKeys.get(keyHash) ?? null;
   }
+  events: { event: string; actor: string; note?: string }[] = [];
+  async countObservationsSince(sourceId: string, since: Date) {
+    return this.observations.filter((o) => o.sourceId === sourceId && Date.parse(o.observedAt) >= since.getTime()).length;
+  }
+  async recordVerificationEvent(e: { event: string; actor: string; note?: string }) {
+    this.events.push(e);
+  }
 }

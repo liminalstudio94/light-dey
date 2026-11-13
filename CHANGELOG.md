@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] — ingestion (LD-041)
+### Added
+- Adapters for the two verified public sources: NISO NIGGRID DisCo load profile (10 min) and Ikeja Electric notices RSS (hourly), with strict parsers that fail closed.
+- Job runner: per-source leases (rate limit), retries with backoff, run logs in `source_runs`, kill switches, idempotent upserts.
+- `/api/cron/refresh` (CRON_SECRET), opportunistic refresh after `/api/status`, GitHub Actions schedule every 10 min, daily Vercel cron backup.
+- Hour-of-day pattern job and status snapshots on change.
+- Partner/verified-reporter ingestion API `POST /api/ingest/observations` (hashed keys, validation, hourly limit) and `npm run partner:key`.
+- CI workflow and Qodo config.
+
 ## [Unreleased] — evidence engine (LD-040)
 ### Added
 - Evidence model migration: sources, source_runs, observations (+ neighbourhood links), disco_service_areas, verification_events, partner_keys, status_snapshots, hourly_patterns — all in `lightdey`, RLS on.

@@ -44,4 +44,6 @@ export interface DataStore {
   insertSnapshots(rows: SnapshotRow[]): Promise<void>;
   /** Partner key lookup by SHA-256 hash; null if unknown or revoked or source inactive. */
   findPartnerKey(keyHash: string): Promise<{ sourceId: string; tier: 1 | 2 | 3 | 4 } | null>;
+  countObservationsSince(sourceId: string, since: Date): Promise<number>;
+  recordVerificationEvent(e: { observationExternalId?: string; sourceId?: string; event: "partner_ingested" | "flagged" | "removed" | "restored" | "verified"; actor: string; note?: string }): Promise<void>;
 }

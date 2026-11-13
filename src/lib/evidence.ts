@@ -21,6 +21,7 @@ export function isActive(o: Observation, now: number, cfg: Cfg = EVIDENCE_CONFIG
 
 /** Does an observation apply to this area? DisCo-scoped evidence only reaches officially mapped areas. */
 export function appliesTo(o: Observation, areaId: string): boolean {
+  if (o.kind === "notice") return o.neighbourhoodIds.includes(areaId); // notices attach only to areas they name
   if (o.scope === "national") return getArea(areaId)?.state === "Lagos";
   if (o.scope === "disco") return discoOf(areaId)?.disco === o.scopeRef;
   return o.scopeRef === areaId || o.neighbourhoodIds.includes(areaId);

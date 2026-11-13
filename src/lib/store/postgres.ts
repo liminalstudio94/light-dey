@@ -180,4 +180,16 @@ export class PostgresStore implements DataStore {
       where k.key_hash = ${keyHash} and k.revoked_at is null and s.is_active`;
     return rows.length ? { sourceId: rows[0].source_id, tier: rows[0].trust_tier as 1 | 2 | 3 | 4 } : null;
   }
+
+  async countObservationsSince(sourceId: string, since: Date): Promise<number> {
+    const [{ n }] = await this.sql<{ n: number }[]>`select count(*)::int as n from lightdey.observations where source_id = ${sourceId} and fetched_at >= ${since}`;
+    return n;
+  }
+
+  async recordVerificationEvent(e: { observationExternalId?: string; sourceId?: string; event: string; actor: string; note?: string }): Promise<void> {
+    await this.sql`
+      insert into lightdey.verification_events (observation_id, event, actor, note)
+      select o.id, ${e.event}, ${e.actor}, ${e.note ?? null} from lightdey.observations o
+      where o.source_id = ${e.sourceId ?? ""} and o.external_id = ${e.observationExternalId ?? ""}`;
+  }
 }
