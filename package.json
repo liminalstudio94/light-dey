@@ -10,14 +10,15 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm test",
-    "gen:seed": "node --experimental-strip-types scripts/gen-seed.ts"
+    "gen:seed": "node --experimental-strip-types scripts/gen-seed.ts",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0",
     "clsx": "^2.1.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.72.0",
     "next": "15.5.29",
+    "postgres": "^4.1.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-leaflet": "^5.0.0",

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] — 2026-11-13
+### Added
+- Supabase Postgres persistence (`PostgresStore`) in an isolated `lightdey` schema; migration runner `npm run db:migrate`.
+- Vercel deployment.
+### Changed
+- Schema moved from `public` to `lightdey`; PostGIS deferred (lat/lng columns); no auth.users trigger.
+### Removed
+- `@supabase/supabase-js` (unused until auth lands).
+
 ## [0.1.0] — 2026-11-13
 ### Added
 - Next.js 15 project with TypeScript strict, Tailwind v4, ESLint, Vitest.

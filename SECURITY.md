@@ -4,8 +4,9 @@
 Please report privately to the maintainers (see /contact). Do not open a public issue.
 
 ## Model
-- Secrets (`SUPABASE_SECRET_KEY`, `REPORTER_HASH_SECRET`) are server-only; modules using them import `server-only`. A test fails if client components reference them.
-- All writes to reports go through `submitReport()` on the server. Public Supabase keys cannot read or write reports (RLS + revoke).
+- Secrets (`POSTGRES_URL`, `REPORTER_HASH_SECRET`) are server-only; modules using them import `server-only`. A test fails if client components reference them.
+- All writes to reports go through `submitReport()` on the server. The `lightdey` schema is not exposed via the Supabase Data API and public roles have no grants; RLS is on as a second layer.
+- The database is shared with another app (separate schema). Moving to a dedicated project is LD-032.
 - Input validated with zod; comments limited to 140 chars and links rejected.
 - POST endpoints reject cross-origin `Origin` headers.
 - IPs are HMAC-hashed; raw IPs are not stored. Location is optional and only stored with the report.

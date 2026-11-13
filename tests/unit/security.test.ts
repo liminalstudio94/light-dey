@@ -16,12 +16,12 @@ describe("credential exposure", () => {
     for (const f of src) {
       const code = readFileSync(f, "utf8");
       if (!code.startsWith('"use client"')) continue;
-      expect(code, f).not.toMatch(/SUPABASE_SECRET_KEY|SERVICE_ROLE|REPORTER_HASH_SECRET/);
+      expect(code, f).not.toMatch(/SUPABASE_SECRET_KEY|SERVICE_ROLE|REPORTER_HASH_SECRET|POSTGRES_URL/);
       expect(code, f).not.toMatch(/lib\/store|lib\/server\/(identity|data)"/);
     }
   });
   it("server-only modules are guarded", () => {
-    for (const f of ["src/lib/store/index.ts", "src/lib/store/supabase.ts", "src/lib/server/identity.ts", "src/lib/server/data.ts"]) {
+    for (const f of ["src/lib/store/index.ts", "src/lib/store/postgres.ts", "src/lib/server/identity.ts", "src/lib/server/data.ts"]) {
       expect(readFileSync(f, "utf8"), f).toMatch(/import "server-only"/);
     }
   });
@@ -33,12 +33,17 @@ describe("credential exposure", () => {
 describe("database migrations", () => {
   const sql = readdirSync("supabase/migrations").map((f) => readFileSync(join("supabase/migrations", f), "utf8")).join("\n");
   it("enables RLS on every table", () => {
-    const tables = [...sql.matchAll(/create table public\.(\w+)/g)].map((m) => m[1]);
+    const tables = [...sql.matchAll(/create table lightdey\.(\w+)/g)].map((m) => m[1]);
     expect(tables.length).toBe(13);
-    for (const t of tables) expect(sql).toContain(`alter table public.${t} enable row level security`);
+    for (const t of tables) expect(sql).toContain(`alter table lightdey.${t} enable row level security`);
+  });
+  it("keeps everything inside the lightdey schema (shared database)", () => {
+    expect(sql).not.toMatch(/\bpublic\.\w+/);
+    expect(sql).not.toMatch(/on auth\.users/);
+    expect(sql).toContain("revoke all on all tables in schema lightdey from anon, authenticated");
   });
   it("gives no write policy on reports to public keys", () => {
-    expect(sql).not.toMatch(/on public\.electricity_reports for (insert|update|delete|all)/);
+    expect(sql).not.toMatch(/on lightdey\.electricity_reports for (insert|update|delete|all)/);
   });
   it("seed matches src/lib/areas.ts", () => {
     for (const a of AREAS) expect(sql).toContain(`('${a.id}', '${a.name.replace(/'/g, "''")}'`);
