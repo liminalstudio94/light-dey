@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --ink: #0f1115;
+  --ink-2: #4a4f59;
+  --ink-3: #7c818b;
+  --line: #e4e2dc;
+  --brand: #2f5bff;
+  --brand-ink: #1a3fd6;
+  --night: #0b0d12;
+  --on: #16a34a;
+  --on-soft: #e7f6ec;
+  --off: #dc2626;
+  --off-soft: #fdecec;
+  --unsure: #ca8a04;
+  --unsure-soft: #fdf5dc;
+  --unknown: #8b9099;
+  --unknown-soft: #eff0f2;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-night: var(--night);
+  --color-on: var(--on);
+  --color-on-soft: var(--on-soft);
+  --color-off: var(--off);
+  --color-off-soft: var(--off-soft);
+  --color-unsure: var(--unsure);
+  --color-unsure-soft: var(--unsure-soft);
+  --color-unknown: var(--unknown);
+  --color-unknown-soft: var(--unknown-soft);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise 0.5s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::after, .rise { animation: none; }
+}
+
+.leaflet-container { font: inherit; background: #eef0f1; }
+/* Calm the busy OSM palette so status dots stand out. */
+.ld-tiles { filter: grayscale(0.85) contrast(0.9) brightness(1.05); }
