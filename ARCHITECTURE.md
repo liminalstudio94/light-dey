@@ -1,11 +1,11 @@
 # Architecture
 
 ## Overview
-Next.js 15 (App Router, TypeScript, Tailwind v4) serves both UI and API. Supabase Postgres (+PostGIS) stores data. Business rules are pure TypeScript in `src/lib`, so they run identically in tests, API routes and server components.
+Next.js 15 (App Router, TypeScript, Tailwind v4) serves both UI and API. Supabase Postgres stores data in a dedicated `lightdey` schema. Business rules are pure TypeScript in `src/lib`, so they run identically in tests, API routes and server components.
 
 ```
 Browser ──► Next.js route handlers (/api/*) ──► submitReport() rules ──► DataStore
-   ▲              │                                                    ├─ SupabaseStore (prod, secret key, server only)
+   ▲              │                                                    ├─ PostgresStore (prod, POSTGRES_URL, server only)
    │              └─► getOverview()/getAreaHistory() ─► status.ts /     └─ MemoryStore (dev/tests, starts empty)
    └── polls /api/status every 30s (paused when tab hidden)   history.ts
 ```
@@ -45,10 +45,17 @@ Scaling plan (LD-021/LD-031): persist transitions to `status_history` via a sche
 - Known gap: cookie rotation lets one person look like several; the per-network cap limits this. CAPTCHA (Turnstile) and reputation are backlog items.
 
 ## Database
-See `supabase/migrations/`. 13 tables: states, cities, local_government_areas, neighbourhoods, users, electricity_reports, neighbourhood_status, status_history, user_follows, notification_preferences, notifications, report_flags, moderation_actions. RLS on all. Reports are not readable or writable with public keys; the server uses the secret key after running `submitReport()`.
+**Hosting:** a Supabase project provisioned through the Vercel marketplace (`dropscope-db`), shared with another app because the free-tier project limit was reached. Isolation:
+- All Light Dey objects live in the `lightdey` schema; nothing is created in `public`, and there is no trigger on the shared auth users table.
+- The schema is not exposed through the Supabase Data API (PostgREST returns PGRST106), and `anon`/`authenticated` have no table grants.
+- The app connects server-side with `POSTGRES_URL` (transaction pooler, `prepare: false`).
+- Migrations: `npm run db:migrate` applies `supabase/migrations/*.sql` once each, tracked in `lightdey.schema_migrations`.
+- Moving to a dedicated project later = run the same migrations there and change `POSTGRES_URL`.
+
+See `supabase/migrations/`. 13 tables: states, cities, local_government_areas, neighbourhoods, users, electricity_reports, neighbourhood_status, status_history, user_follows, notification_preferences, notifications, report_flags, moderation_actions. RLS on all. Reports are not readable or writable with public keys; only the server writes, after running `submitReport()`. Coordinates are plain lat/lng columns; PostGIS is deferred until geo queries are needed (LD-031).
 
 ## Geography
-41 Lagos neighbourhoods with **approximate centre points** (no boundaries). The map draws dots, labelled approximate. `neighbourhoods.boundary` is reserved for a future, sourced polygon dataset. Expansion to other states = new rows in states/cities/LGAs/neighbourhoods; no code change to the rules.
+41 Lagos neighbourhoods with **approximate centre points** (no boundaries). The map draws dots, labelled approximate. `neighbourhoods.boundary_geojson` is reserved for a future, sourced polygon dataset. Expansion to other states = new rows in states/cities/LGAs/neighbourhoods; no code change to the rules.
 
 ## Maps
 Leaflet + OpenStreetMap standard tiles (attribution shown). OSM's tile policy suits low traffic only; before launch at scale, switch to a provider with an SLA (MapTiler/Stadia/Mapbox) — LD-028.

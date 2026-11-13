@@ -48,11 +48,13 @@ scripts/                 Dev scripts (e.g. gen-seed.ts).
 ## 6. Database
 - Every schema change is a new file in `supabase/migrations/` (`YYYYMMDDHHMMSS_name.sql`). Never edit a shipped migration.
 - Every table has RLS enabled. Public keys get read-only access to reference/aggregate data only.
-- Reports are written only by the server with the secret key, after `submitReport()` rules run.
+- Reports are written only by the server (PostgresStore), after `submitReport()` rules run.
+- Everything goes in the `lightdey` schema — the database is shared. Never create objects in `public` or touch `auth` (a test enforces this).
+- Apply migrations with `npm run db:migrate`.
 - Changing `src/lib/areas.ts` ⇒ run `npm run gen:seed` and commit the regenerated seed (a test enforces sync).
 
 ## 7. Security
-- Never expose `SUPABASE_SECRET_KEY` or `REPORTER_HASH_SECRET` to the browser (no `NEXT_PUBLIC_` prefix; files importing them use `import "server-only"`).
+- Never expose `POSTGRES_URL*` or `REPORTER_HASH_SECRET` to the browser (no `NEXT_PUBLIC_` prefix; files importing them use `import "server-only"`).
 - Validate every external input with zod on the server. Frontend validation is UX only.
 - Admin/moderator checks happen server-side (`is_staff()` in SQL and in route handlers). Hiding a button is not authorization.
 - Store hashes, not raw IPs. Collect location only on explicit user action.

@@ -9,6 +9,7 @@ npm install
 cp .env.example .env.local
 npm run dev        # http://localhost:3000
 npm run check      # typecheck + lint + tests
+npm run db:migrate # apply SQL migrations (needs POSTGRES_URL_NON_POOLING)
 ```
 
 - How it works & rules: [ARCHITECTURE.md](ARCHITECTURE.md)

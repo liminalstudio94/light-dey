@@ -27,15 +27,24 @@ Leaflet + OSM, coloured markers, popups, filters, map/list toggle, labelled appr
 ### LD-008 — Area pages, history, best hours, share · P0 · done
 `/area/[id]`: live status with all fields, report panel, share (WhatsApp/X/Facebook/copy), nearby comparison, 7/30-day history charts, best hours as estimates. Tests: `history.test.ts`, `components.test.tsx`.
 
-### LD-009 — Database schema & RLS · P0 · done (not yet applied)
-13 tables, PostGIS, RLS everywhere, seed generated from areas.ts. Tests: `security.test.ts` static checks. **Not yet run against a real database.**
+### LD-009 — Database schema & RLS · P0 · done
+13 tables in `lightdey` schema, RLS everywhere, seed generated from areas.ts. Tests: `security.test.ts` static checks.
+
+### LD-010 — Connect Supabase and apply migrations · P0 · done (PR #1)
+Supabase via Vercel marketplace (shared `dropscope-db`, isolated `lightdey` schema), PostgresStore, `npm run db:migrate`. Verified: 14 tables with RLS, 41 areas seeded, Data API rejects the schema, anon/authenticated have 0 grants, API + browser checks pass against the real DB (test rows deleted).
+
+### LD-011 — Deploy to Vercel · P0 · done (PR #1)
+REPORTER_HASH_SECRET set; production smoke test of report → status.
 
 ## Todo
-### LD-010 — Create Supabase project and apply migrations · P0 · blocked (credentials)
-Acceptance: migrations apply cleanly; app reads/writes reports via SupabaseStore; RLS verified with the publishable key (anon cannot read reports or insert). Tests: integration test against a Supabase branch/local stack.
+### LD-031 — PostGIS + sourced boundaries · P2
+Enable PostGIS (ideally on a dedicated project), migrate lat/lng to geography, nearest-area queries in SQL.
 
-### LD-011 — Deploy to Vercel · P0 · depends LD-010
-Env vars set (SUPABASE_URL, SUPABASE_SECRET_KEY, REPORTER_HASH_SECRET, NEXT_PUBLIC_SITE_URL). Acceptance: production smoke test of report → status.
+### LD-032 — Dedicated Supabase project · P1
+Move off the shared database before real launch traffic (same migrations, new POSTGRES_URL).
+
+### LD-033 — Automated DB integration test · P1
+Run the API checks against a throwaway Postgres in CI.
 
 ### LD-012 — Durable rate limiting · P0 · depends LD-010
 Limits are DB-backed already; add a Postgres function doing check+insert atomically to avoid race-condition double inserts. Tests: concurrent submit test.
