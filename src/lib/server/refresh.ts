@@ -24,6 +24,8 @@ export async function refreshDueSources(opts: { force?: boolean; snapshot?: "alw
       await store.releaseLease("historical_estimate").catch(() => {});
     }
   }
+  // Housekeeping for sensor replay/rate data (cheap; bounded tables).
+  await store.pruneSensorData(now).catch((e) => console.error("[refresh:prune]", e));
   const anyRan = runs.some((r) => r.status !== "skipped") || patterns !== "skipped";
   const errors = runs.filter((r) => r.status === "error").length + (patterns === "error" ? 1 : 0);
   const summary = { at: now.toISOString(), errors, runs: runs.map(({ log, ...r }) => ({ ...r, log: log.slice(-4) })), patterns };

@@ -2,8 +2,9 @@
 // Trust tier is DERIVED from the id prefix and kind — never chosen freely — so a single
 // verified reporter can never be issued official (tier 1) authority.
 export const KINDS_BY_PREFIX = {
-  "verified:": { kinds: ["verified_reporter"], tier: 2 },
-  "partner:": { kinds: ["verified_partner", "official_disco"], tier: 1 },
+  "verified:": { kinds: ["verified_reporter"], tier: () => 2 },
+  // Human partners (shops, security desks, estates…) are reports (tier 2); only an official DisCo partner is tier 1.
+  "partner:": { kinds: ["verified_partner", "official_disco"], tier: (kind) => (kind === "official_disco" ? 1 : 2) },
 };
 
 /**
@@ -16,8 +17,9 @@ export function validateSourceSpec({ id, kind, tier }) {
   const prefix = id.startsWith("verified:") ? "verified:" : "partner:";
   const rule = KINDS_BY_PREFIX[prefix];
   if (!rule.kinds.includes(kind)) throw new Error(`--kind for ${prefix} ids must be ${rule.kinds.join(" or ")}`);
-  if (tier !== undefined && tier !== null && tier !== "" && Number(tier) !== rule.tier) {
-    throw new Error(`${prefix} sources are always tier ${rule.tier}; got --tier ${tier}`);
+  const derived = rule.tier(kind);
+  if (tier !== undefined && tier !== null && tier !== "" && Number(tier) !== derived) {
+    throw new Error(`${prefix} ${kind} sources are always tier ${derived}; got --tier ${tier}`);
   }
-  return { tier: rule.tier };
+  return { tier: derived };
 }

@@ -1,4 +1,5 @@
-import type { HourPattern, MapState, Observation, Report } from "../types";
+import type { DeviceRow } from "../sensors/health";
+import type { HourPattern, MapState, Observation, Report, SourceKind } from "../types";
 
 export type NewReport = Omit<Report, "id">;
 export type NewObservation = Omit<Observation, "id" | "tier"> & { payload?: Record<string, unknown> };
@@ -22,7 +23,31 @@ export interface PartnerKey {
   keyId: string;
   sourceId: string;
   tier: 1 | 2 | 3 | 4;
+  kind?: SourceKind;
   allowedAreas: string[];
+}
+
+export interface TimelineEntry {
+  mapState: MapState;
+  confidence: string;
+  at: string;
+  /** Public summary of the deciding evidence at that moment (no private ids). */
+  basis: string | null;
+}
+
+export interface HeartbeatWrite {
+  deviceId: string;
+  nonce: string;
+  deviceTs: Date;
+  receivedAt: Date;
+  mains: "on" | "off" | "unknown";
+  powerSource: string;
+  batteryPct: number | null;
+  selfTest: "pass" | "fail" | null;
+  firmware: string | null;
+  clockSkewS: number;
+  networkHash: string;
+  minIntervalSeconds: number;
 }
 
 export interface RunResult {
@@ -62,6 +87,8 @@ export interface DataStore {
   replaceHourPatterns(rows: HourPattern[], windowDays: number): Promise<void>;
   /** Latest snapshot state per area. */
   latestMapStates(): Promise<Map<string, MapState>>;
+  /** Snapshots for one area since `since`, newest first (the status timeline). */
+  listSnapshots(areaId: string, since: Date): Promise<TimelineEntry[]>;
   /** Atomically compares with the latest snapshots and inserts only changed areas. Returns rows inserted. */
   recordSnapshotChanges(rows: SnapshotRow[]): Promise<number>;
   /** Partner key lookup by SHA-256 hash; null if unknown or revoked or source inactive. */
@@ -70,5 +97,16 @@ export interface DataStore {
   consumePartnerQuota(keyId: string, limit: number, now: Date): Promise<boolean>;
   /** Area an existing observation was filed under, or undefined if new. */
   observationScope(sourceId: string, externalId: string): Promise<string | null | undefined>;
+
+  // ---- Sensors ----
+  getDevice(deviceId: string): Promise<{ deviceId: string; areaId: string; revoked: boolean } | null>;
+  /**
+   * Atomically: per-device rate limit, nonce replay check, raw heartbeat insert and device
+   * state update. Returns "ok", "replay" (nonce seen) or "rate_limited".
+   */
+  recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited">;
+  /** Every non-revoked device with its latest state (health is computed by the caller). */
+  listDevices(): Promise<DeviceRow[]>;
+  pruneSensorData(now: Date): Promise<{ nonces: number; heartbeats: number }>;
   recordVerificationEvent(e: { observationExternalId?: string; sourceId?: string; event: "partner_ingested" | "flagged" | "removed" | "restored" | "verified"; actor: string; note?: string }): Promise<void>;
 }

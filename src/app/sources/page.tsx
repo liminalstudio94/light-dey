@@ -13,6 +13,9 @@ const STATUS: Record<Integration, { label: string; cls: string }> = {
   awaiting_credentials: { label: "Needs API credentials", cls: "bg-unsure-soft text-unsure" },
   awaiting_partner: { label: "Awaiting approved partners", cls: "bg-unsure-soft text-unsure" },
   unavailable: { label: "No accessible feed", cls: "bg-unknown-soft text-ink-2" },
+  awaiting_hardware: { label: "Implemented — needs devices", cls: "bg-unsure-soft text-unsure" },
+  awaiting_permission: { label: "Implemented — awaiting permission (off)", cls: "bg-unsure-soft text-unsure" },
+  rejected: { label: "Rejected", cls: "bg-off-soft text-off" },
 };
 
 export default function SourcesPage() {

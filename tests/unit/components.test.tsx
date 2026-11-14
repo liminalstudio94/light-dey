@@ -56,7 +56,7 @@ describe("shareText", () => {
   });
   it("an official outage never quotes neighbours who reported light (Qodo pass 3, #2-1)", () => {
     const s = aggregateAreaStatus("ajah", ["a", "b", "c"].map((w, i) => rep("on", i + 1, w, { areaId: "ajah" })), NOW);
-    const official = { ...s, state: "NO_LIGHT" as const, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
+    const official = { ...s, state: "NO_LIGHT" as const, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, evidenceType: "official" as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
     const t = shareText("Ajah", official, NOW.getTime());
     expect(t).toMatch(/NISO grid data/);
     expect(t).not.toMatch(/3 people|3 neighbours/);
@@ -79,7 +79,7 @@ describe("evidence-aware UI", () => {
     expect(shareText("Yaba", { ...base, mapState: "COMMUNITY_OFF" }, NOW.getTime())).toMatch(/^NO LIGHT reported in Yaba: 3 neighbours reported an outage .*\(not official\)/);
     // Estimates only exist when there are no fresh reports (engine rule), so use an area with none.
     expect(shareText("Yaba", { ...aggregateAreaStatus("yaba", [], NOW), mapState: "ESTIMATED_OFF" }, NOW.getTime())).toMatch(/^No live light reports/);
-    const official = { ...base, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
+    const official = { ...base, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, evidenceType: "official" as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
     expect(shareText("Yaba", official, NOW.getTime())).toMatch(/^GRID SUPPLY OUTAGE affecting Yaba — official NISO grid data at/);
     expect(shareText("Yaba", official, NOW.getTime())).toMatch(/generator, solar or a private supply/); // Qodo #4-10
     const verifiedConfirmed = { ...official, evidence: [{ ...official.evidence[0], sourceId: "verified_reporters", sourceName: "Verified reporter", tier: 2 as const }] };
@@ -87,7 +87,7 @@ describe("evidence-aware UI", () => {
   });
 });
 
-const ev = (p: Partial<EvidenceItem>): EvidenceItem => ({ sourceId: "ikeja_electric_notices", sourceName: "Ikeja Electric notices", tier: 1, role: "context", status: null, summary: "Notice", count: 1, observedAt: NOW.toISOString(), freshness: "fresh", url: null, ...p });
+const ev = (p: Partial<EvidenceItem>): EvidenceItem => ({ sourceId: "ikeja_electric_notices", sourceName: "Ikeja Electric notices", tier: 1, evidenceType: "official", role: "context", status: null, summary: "Notice", count: 1, observedAt: NOW.toISOString(), freshness: "fresh", url: null, ...p });
 
 describe("Qodo PR #4 fixes", () => {
   it("only links attribution to trusted https source hosts (#1)", () => {

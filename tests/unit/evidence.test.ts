@@ -42,7 +42,7 @@ describe("evidence engine — basics", () => {
   it("no evidence => UNKNOWN with an explanation, never a guess", () => {
     const s = resolve("ikeja", []);
     expect(s.mapState).toBe("UNKNOWN");
-    expect(s.explanation).toMatch(/Not enough verified data/);
+    expect(s.explanation).toMatch(/Not enough current evidence/);
     expect(s.evidence).toEqual([]);
   });
 
@@ -71,7 +71,7 @@ describe("official sources", () => {
     expect(s.confidence).toBe("high");
     expect(s.evidence?.[0]).toMatchObject({ sourceId: "niso_niggrid", role: "decisive", tier: 1, sourceName: "NISO grid data" });
     expect(s.evidence?.[0].url).toContain("niggrid.org");
-    expect(s.explanation).toMatch(/private or embedded generation/);
+    expect(s.explanation).toMatch(/generator, solar or inverter may still have power/);
   });
 
   it("official outage expires: a 2-hour-old collapse is ignored", () => {
@@ -147,7 +147,7 @@ describe("official sources", () => {
     expect(s.mapState).toBe("CONFIRMED_OFF");
     expect(s.confidence).toBe("medium");
     expect(s.evidence?.find((e) => e.sourceId === "community")?.role).toBe("conflicting");
-    expect(s.explanation).toMatch(/generator\/solar/);
+    expect(s.explanation).toMatch(/may be on generator, solar or a separate feeder/);
   });
 
   it("neighbours who said the opposite are never listed as supporting (Qodo pass 3, #2-3)", () => {
@@ -162,7 +162,7 @@ describe("official sources", () => {
   });
 
   it("opposing official evidence => CONFLICTING", () => {
-    const partnerOn = obs({ sourceId: "partner:estate", kind: "status_report", scope: "neighbourhood", scopeRef: "ikeja", status: "on", tier: 1 });
+    const partnerOn = obs({ sourceId: "partner:ie-desk", kind: "status_report", scope: "neighbourhood", scopeRef: "ikeja", status: "on", tier: 1, sourceKind: "official_disco" });
     expect(resolve("ikeja", [], [disco("ikeja", 0), partnerOn]).mapState).toBe("CONFLICTING");
   });
 
@@ -178,27 +178,26 @@ describe("official sources", () => {
   });
 });
 
-describe("verified reporters (tier 2)", () => {
-  it("one verified reporter alone is not shown as an established status (Qodo #2-6)", () => {
+describe("verified reporters (tier 2) — reports, never 'confirmed'", () => {
+  it("one fresh verified report => Reported (COMMUNITY_*), low confidence, with its age", () => {
     const s = resolve("ikoyi", [], [verified("verified:ada", "ikoyi", "on")]);
-    expect(s.mapState).toBe("UNKNOWN");
-    expect(s.state).toBe("UNKNOWN");
-    expect(s.explanation).toMatch(/1 verified reporter says light dey/);
-    expect(s.evidence?.[0]).toMatchObject({ role: "supporting", sourceName: "Verified reporter" });
+    expect(s.mapState).toBe("COMMUNITY_ON");
+    expect(s.confidence).toBe("low");
+    expect(s.explanation).toMatch(/Reported by 1 verified reporter \(5 min ago\)/);
+    expect(s.evidence?.[0]).toMatchObject({ role: "decisive", sourceName: "Verified reporter", evidenceType: "reported" });
   });
-  it("two independent verified reporters confirm", () => {
-    expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off"), verified("vr:2", "ikoyi", "off")]).mapState).toBe("CONFIRMED_OFF");
+  it("two independent verified reporters => LIKELY (not confirmed)", () => {
+    expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off"), verified("vr:2", "ikoyi", "off")]).mapState).toBe("LIKELY_OFF");
   });
   it("the same verified reporter twice counts once", () => {
-    expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off", 2), verified("vr:1", "ikoyi", "off", 8)]).mapState).toBe("UNKNOWN");
+    expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off", 2), verified("vr:1", "ikoyi", "off", 8)]).mapState).toBe("COMMUNITY_OFF");
   });
-  it("two verified reporters with their own sources (the issued key model) confirm (Qodo #2-2)", () => {
-    // scripts/partner-key.mjs issues one `verified:<slug>` source per vetted person.
-    expect(resolve("ikoyi", [], [verified("verified:ada-ikoyi", "ikoyi", "off"), verified("verified:tunde-ikoyi", "ikoyi", "off")]).mapState).toBe("CONFIRMED_OFF");
+  it("two verified reporters with their own sources (the issued key model) => LIKELY", () => {
+    expect(resolve("ikoyi", [], [verified("verified:ada-ikoyi", "ikoyi", "off"), verified("verified:tunde-ikoyi", "ikoyi", "off")]).mapState).toBe("LIKELY_OFF");
   });
-  it("one verified + community confirmation of the same status confirms", () => {
+  it("one verified + community agreement => LIKELY", () => {
     const s = resolve("ikoyi", ["a", "b", "c"].map((w, i) => rep("on", i + 1, w, { areaId: "ikoyi" })), [verified("vr:1", "ikoyi", "on")]);
-    expect(s.mapState).toBe("CONFIRMED_ON");
+    expect(s.mapState).toBe("LIKELY_ON");
   });
   it("verified vs community disagreement => CONFLICTING", () => {
     const s = resolve("ikoyi", ["a", "b", "c"].map((w, i) => rep("on", i + 1, w, { areaId: "ikoyi" })), [verified("vr:1", "ikoyi", "off")]);
@@ -284,8 +283,11 @@ describe("Yaba scenario — no hard-coding, evidence decides", () => {
     expect(s.mapState).toBe("CONFIRMED_OFF");
     expect(s.evidence?.[0]).toMatchObject({ sourceId: "niso_niggrid", role: "decisive" });
   });
-  it("two verified Yaba reporters => CONFIRMED_OFF", () => {
-    expect(resolve("yaba", [], [verified("vr:a", "yaba", "off"), verified("vr:b", "yaba", "off")]).mapState).toBe("CONFIRMED_OFF");
+  it("two verified Yaba reporters => LIKELY_OFF (reports never 'confirm')", () => {
+    expect(resolve("yaba", [], [verified("vr:a", "yaba", "off"), verified("vr:b", "yaba", "off")]).mapState).toBe("LIKELY_OFF");
+  });
+  it("one fresh verified Yaba report => Reported outage immediately (no 3-person wait)", () => {
+    expect(resolve("yaba", [], [verified("vr:a", "yaba", "off")]).mapState).toBe("COMMUNITY_OFF");
   });
 });
 

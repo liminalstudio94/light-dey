@@ -1,7 +1,8 @@
 import "server-only";
 import postgres from "postgres";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import { ObservationScopeConflict, type DataStore, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow } from "./types";
+import type { DeviceRow } from "../sensors/health";
+import { ObservationScopeConflict, type DataStore, type HeartbeatWrite, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow, type TimelineEntry } from "./types";
 
 type Row = {
   id: string;
@@ -81,7 +82,7 @@ export class PostgresStore implements DataStore {
     // Latest unexpired reading per (source, kind, scope, area) plus every unexpired notice.
     // No global row cap: older-but-valid evidence for quiet areas must never be dropped.
     const rows = await this.sql<
-      { id: string; source_id: string; external_id: string; scope: Observation["scope"]; scope_ref: string | null; kind: Observation["kind"]; status: Observation["status"]; value_num: number | null; title: string | null; url: string | null; observed_at: Date; valid_until: Date; tier: number; areas: string[] | null }[]
+      { id: string; source_id: string; external_id: string; scope: Observation["scope"]; scope_ref: string | null; kind: Observation["kind"]; status: Observation["status"]; value_num: number | null; title: string | null; url: string | null; observed_at: Date; valid_until: Date; tier: number; source_kind: string; areas: string[] | null }[]
     >`
       with candidates as (
         select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
@@ -94,11 +95,11 @@ export class PostgresStore implements DataStore {
         select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
       )
       select o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until,
-             s.trust_tier as tier, array_remove(array_agg(onb.neighbourhood_id), null) as areas
+             s.trust_tier as tier, s.kind as source_kind, array_remove(array_agg(onb.neighbourhood_id), null) as areas
       from picked o
       join lightdey.sources s on s.id = o.source_id and s.is_active
       left join lightdey.observation_neighbourhoods onb on onb.observation_id = o.id
-      group by o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until, s.trust_tier
+      group by o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until, s.trust_tier, s.kind
       order by o.observed_at desc`;
     return rows.map((r) => ({
       id: r.id,
@@ -115,6 +116,7 @@ export class PostgresStore implements DataStore {
       validUntil: r.valid_until.toISOString(),
       neighbourhoodIds: r.areas ?? [],
       tier: r.tier as Observation["tier"],
+      sourceKind: r.source_kind as Observation["sourceKind"],
     }));
   }
 
@@ -200,6 +202,16 @@ export class PostgresStore implements DataStore {
     return new Map(rows.map((r) => [r.neighbourhood_id, r.map_state]));
   }
 
+  async listSnapshots(areaId: string, since: Date): Promise<TimelineEntry[]> {
+    const rows = await this.sql<{ map_state: MapState; confidence: string; computed_at: Date; evidence: { role?: string; sourceName?: string; summary?: string }[] }[]>`
+      select map_state, confidence, computed_at, evidence from lightdey.status_snapshots
+      where neighbourhood_id = ${areaId} and computed_at >= ${since} order by computed_at desc limit 50`;
+    return rows.map((r) => {
+      const d = (Array.isArray(r.evidence) ? r.evidence : []).find((e) => e.role === "decisive");
+      return { mapState: r.map_state, confidence: r.confidence, at: r.computed_at.toISOString(), basis: d ? `${d.sourceName}: ${d.summary}` : null };
+    });
+  }
+
   async recordSnapshotChanges(rows: SnapshotRow[]): Promise<number> {
     if (!rows.length) return 0;
     // One transaction under an advisory lock: concurrent refreshes can't both see the old state and insert duplicates.
@@ -217,10 +229,10 @@ export class PostgresStore implements DataStore {
   }
 
   async findPartnerKey(keyHash: string): Promise<PartnerKey | null> {
-    const rows = await this.sql<{ id: string; source_id: string; trust_tier: number; allowed_neighbourhoods: string[] }[]>`
-      select k.id, k.source_id, s.trust_tier, k.allowed_neighbourhoods from lightdey.partner_keys k join lightdey.sources s on s.id = k.source_id
+    const rows = await this.sql<{ id: string; source_id: string; trust_tier: number; kind: string; allowed_neighbourhoods: string[] }[]>`
+      select k.id, k.source_id, s.trust_tier, s.kind, k.allowed_neighbourhoods from lightdey.partner_keys k join lightdey.sources s on s.id = k.source_id
       where k.key_hash = ${keyHash} and k.revoked_at is null and s.is_active`;
-    return rows.length ? { keyId: rows[0].id, sourceId: rows[0].source_id, tier: rows[0].trust_tier as PartnerKey["tier"], allowedAreas: rows[0].allowed_neighbourhoods } : null;
+    return rows.length ? { keyId: rows[0].id, sourceId: rows[0].source_id, tier: rows[0].trust_tier as PartnerKey["tier"], kind: rows[0].kind as PartnerKey["kind"], allowedAreas: rows[0].allowed_neighbourhoods } : null;
   }
 
   async consumePartnerQuota(keyId: string, limit: number, now: Date): Promise<boolean> {
@@ -246,5 +258,56 @@ export class PostgresStore implements DataStore {
       insert into lightdey.verification_events (observation_id, event, actor, note)
       select o.id, ${e.event}, ${e.actor}, ${e.note ?? null} from lightdey.observations o
       where o.source_id = ${e.sourceId ?? ""} and o.external_id = ${e.observationExternalId ?? ""}`;
+  }
+
+  // ---------- Sensors ----------
+
+  async getDevice(deviceId: string) {
+    const rows = await this.sql<{ id: string; neighbourhood_id: string; revoked_at: Date | null }[]>`select id, neighbourhood_id, revoked_at from lightdey.devices where id = ${deviceId}`;
+    return rows.length ? { deviceId: rows[0].id, areaId: rows[0].neighbourhood_id, revoked: rows[0].revoked_at !== null } : null;
+  }
+
+  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited"> {
+    return this.sql.begin(async (tx) => {
+      // Row lock serialises heartbeats per device (rate limit + nonce check can't race).
+      const [dev] = await tx<{ last_heartbeat_at: Date | null }[]>`select last_heartbeat_at from lightdey.devices where id = ${h.deviceId} and revoked_at is null for update`;
+      if (!dev) return "replay"; // revoked between lookup and write: treat as rejected
+      if (dev.last_heartbeat_at && h.receivedAt.getTime() - dev.last_heartbeat_at.getTime() < h.minIntervalSeconds * 1000) return "rate_limited";
+      const nonce = await tx`insert into lightdey.sensor_nonces (device_id, nonce, seen_at) values (${h.deviceId}, ${h.nonce}, ${h.receivedAt}) on conflict do nothing returning nonce`;
+      if (!nonce.length) return "replay";
+      await tx`insert into lightdey.sensor_heartbeats (device_id, received_at, device_ts, mains, power_source, battery_pct, self_test, firmware, network_hash)
+               values (${h.deviceId}, ${h.receivedAt}, ${h.deviceTs}, ${h.mains}, ${h.powerSource}, ${h.batteryPct}, ${h.selfTest}, ${h.firmware}, ${h.networkHash})`;
+      await tx`update lightdey.devices set last_heartbeat_at = ${h.receivedAt}, last_mains = ${h.mains}, last_power_source = ${h.powerSource},
+                 last_battery_pct = ${h.batteryPct}, last_clock_skew_s = ${h.clockSkewS}, last_self_test = ${h.selfTest}, last_firmware = ${h.firmware},
+                 last_network_hash = ${h.networkHash}
+               where id = ${h.deviceId}`;
+      return "ok";
+    });
+  }
+
+  async listDevices(): Promise<DeviceRow[]> {
+    const rows = await this.sql<
+      { id: string; neighbourhood_id: string; provider: string; supply_point: DeviceRow["supplyPoint"]; last_heartbeat_at: Date | null; last_mains: DeviceRow["mains"]; last_power_source: DeviceRow["powerSource"]; last_battery_pct: number | null; last_clock_skew_s: number | null; last_self_test: DeviceRow["selfTest"]; last_network_hash: string | null }[]
+    >`select id, neighbourhood_id, provider, supply_point, last_heartbeat_at, last_mains, last_power_source, last_battery_pct, last_clock_skew_s, last_self_test, last_network_hash
+      from lightdey.devices where revoked_at is null`;
+    return rows.map((r) => ({
+      deviceId: r.id,
+      areaId: r.neighbourhood_id,
+      provider: r.provider,
+      supplyPoint: r.supply_point,
+      lastHeartbeatAt: r.last_heartbeat_at?.toISOString() ?? null,
+      mains: r.last_mains,
+      powerSource: r.last_power_source,
+      batteryPct: r.last_battery_pct,
+      clockSkewS: r.last_clock_skew_s,
+      selfTest: r.last_self_test,
+      networkHash: r.last_network_hash,
+    }));
+  }
+
+  async pruneSensorData(now: Date) {
+    const n = await this.sql`delete from lightdey.sensor_nonces where seen_at < ${now}::timestamptz - interval '1 hour' returning 1`;
+    const h = await this.sql`delete from lightdey.sensor_heartbeats where received_at < ${now}::timestamptz - interval '7 days' returning 1`;
+    return { nonces: n.length, heartbeats: h.length };
   }
 }

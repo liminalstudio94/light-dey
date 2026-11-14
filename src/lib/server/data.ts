@@ -5,10 +5,11 @@ import { gridContextFrom, lagosHour, resolveAreaStatus } from "../evidence";
 import { historyStats } from "../history";
 import { aggregateAll } from "../status";
 import { isSourceEnabled } from "../ingest/switches";
+import { toSensorState, type DeviceRow } from "../sensors/health";
 import { getStore } from "../store";
-import type { AreaState, MapState, Overview } from "../types";
+import type { AreaState, AreaStatus, MapState, Overview } from "../types";
 
-export const MAP_STATES: MapState[] = ["CONFIRMED_ON", "COMMUNITY_ON", "CONFIRMED_OFF", "COMMUNITY_OFF", "CONFLICTING", "ESTIMATED_ON", "ESTIMATED_OFF", "UNKNOWN"];
+export const MAP_STATES: MapState[] = ["CONFIRMED_ON", "LIKELY_ON", "COMMUNITY_ON", "CONFIRMED_OFF", "LIKELY_OFF", "COMMUNITY_OFF", "CONFLICTING", "ESTIMATED_ON", "ESTIMATED_OFF", "UNKNOWN"];
 
 export type { Overview } from "../types";
 
@@ -29,22 +30,33 @@ export async function evidenceOrEmpty<T>(p: Promise<T[]>, what: string): Promise
   }
 }
 
+/** Provisioned devices that never sent a heartbeat still count toward coverage (as offline). */
+function withNeverReported(s: AreaStatus, never: DeviceRow[]): AreaStatus {
+  const n = never.filter((d) => d.areaId === s.areaId).length;
+  if (!n || !s.sensors) return s;
+  return { ...s, sensors: { total: s.sensors.total + n, online: s.sensors.online, offline: s.sensors.offline + n } };
+}
+
 /** Cached per request, so generateMetadata and the page share one load. */
 export const getOverview = cache(loadOverview);
 
 async function loadOverview(now = new Date()): Promise<Overview> {
   const store = getStore();
-  const [reports, stored, patterns] = await Promise.all([
+  const [reports, stored, patterns, devices] = await Promise.all([
     store.listReports({ since: new Date(now.getTime() - 24 * 3_600_000) }),
     evidenceOrEmpty(store.listObservations(now), "observations"),
     evidenceOrEmpty(store.listHourPatterns(lagosHour(now.getTime())), "hourly_patterns"),
+    evidenceOrEmpty(store.listDevices(), "devices"),
   ]);
+  // Sensors: latest state + health per device (offline devices still count for coverage, never as outage).
+  const sensors = devices.map((d) => toSensorState(d, now.getTime())).filter((x): x is NonNullable<typeof x> => x !== null);
+  const neverReported = devices.filter((d) => !d.lastHeartbeatAt);
   // A switched-off source stops counting immediately, not just when its readings expire.
   const observations = stored.filter((o) => isSourceEnabled(o.sourceId));
   const patternByArea = new Map(patterns.map((p) => [p.areaId, p]));
   // Community-only status first (all 24h reports so staleness can be explained), then combine with other evidence.
   const statuses = aggregateAll(AREAS.map((a) => a.id), reports, now).map((community) =>
-    resolveAreaStatus({ community, observations, pattern: patternByArea.get(community.areaId), now }),
+    withNeverReported(resolveAreaStatus({ community, observations, sensors, pattern: patternByArea.get(community.areaId), now }), neverReported),
   );
   const counts = { LIGHT: 0, NO_LIGHT: 0, UNCERTAIN: 0, UNKNOWN: 0 } as Record<AreaState, number>;
   const mapCounts = Object.fromEntries(MAP_STATES.map((m) => [m, 0])) as Record<MapState, number>;
@@ -75,4 +87,9 @@ export async function getAreaHistory(areaId: string, days: 7 | 30, now = new Dat
   const since = new Date(now.getTime() - (days * 24 + 2) * 3_600_000);
   const reports = await store.listReports({ since, areaId });
   return historyStats(areaId, reports, days, now);
+}
+
+/** Recent map-state changes for one area (from status_snapshots), newest first. */
+export async function getAreaTimeline(areaId: string, hours = 48, now = new Date()) {
+  return evidenceOrEmpty(getStore().listSnapshots(areaId, new Date(now.getTime() - hours * 3_600_000)), "status_snapshots");
 }

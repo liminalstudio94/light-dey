@@ -12,7 +12,8 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "gen:seed": "node --experimental-strip-types scripts/gen-seed.ts",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
-    "partner:key": "node --env-file=.env.local scripts/partner-key.mjs"
+    "partner:key": "node --env-file=.env.local scripts/partner-key.mjs",
+    "sensor:provision": "node --env-file=.env.local scripts/sensor-provision.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

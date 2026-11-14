@@ -18,7 +18,7 @@ describe("credential exposure", () => {
     for (const f of src) {
       const code = readFileSync(f, "utf8");
       if (!code.startsWith('"use client"')) continue;
-      expect(code, f).not.toMatch(/SUPABASE_SECRET_KEY|SERVICE_ROLE|REPORTER_HASH_SECRET|POSTGRES_URL/);
+      expect(code, f).not.toMatch(/SUPABASE_SECRET_KEY|SERVICE_ROLE|REPORTER_HASH_SECRET|POSTGRES_URL|SENSOR_MASTER_SECRET|deviceSecret/);
       expect(code, f).not.toMatch(/lib\/store|lib\/server\/(identity|data)"/);
     }
   });
@@ -73,7 +73,9 @@ describe("database client", () => {
 
 describe("source registry", () => {
   it("only marks sources active when they are live or derived", () => {
-    for (const s of SOURCES) if (s.active) expect(["live", "derived"], s.id).toContain(s.integration);
+    // Active = used by the engine. Sensors are active (implemented) even before any device exists.
+    for (const s of SOURCES) if (s.active) expect(["live", "derived", "awaiting_hardware"], s.id).toContain(s.integration);
+    for (const s of SOURCES) if (["rejected", "awaiting_permission", "awaiting_credentials", "unavailable"].includes(s.integration)) expect(s.active, s.id).toBe(false);
   });
   // Yaba stays unmapped until an official source names its DisCo; update this test with the citation if that changes.
   it("DisCo mappings cite an official source and never include Yaba", () => {

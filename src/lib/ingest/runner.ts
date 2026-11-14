@@ -3,6 +3,7 @@ import { EVIDENCE_CONFIG } from "../config";
 import { historyStats } from "../history";
 import type { DataStore, NewObservation, RunResult } from "../store/types";
 import type { AreaStatus, HourPattern } from "../types";
+import { iodaEventsUrl, iodaObservations, parseIodaEvents } from "./ioda";
 import { isSourceEnabled } from "./switches";
 import { defaultFetcher, fetchWithRetry, RetryError, type Fetcher } from "./http";
 import { IKEJA_FEED_URL, noticeObservations, parseRss } from "./ikejaNotices";
@@ -44,9 +45,21 @@ export const ADAPTERS: Adapter[] = [
       return { observations, fetched: items.length, attempts };
     },
   },
+  {
+    sourceId: "ioda",
+    everyMinutes: 15,
+    enabledEnv: "SOURCE_IODA_ENABLED", // opt-in: OFF unless set to 1 (awaiting IODA permission)
+    async fetchObservations(fetcher, now, log) {
+      const { text, attempts } = await fetchWithRetry(fetcher, iodaEventsUrl(now), log, { deadline: Date.now() + ADAPTER_BUDGET_MS });
+      const events = parseIodaEvents(text);
+      const observations = iodaObservations(events, now);
+      log.push(`${events.length} events in 6h; ${observations.length} ongoing (Lagos-wide context only)`);
+      return { observations, fetched: events.length, attempts };
+    },
+  },
 ];
 
-const enabled = (a: Adapter) => isSourceEnabled(a.sourceId) && process.env[a.enabledEnv] !== "0";
+const enabled = (a: Adapter) => isSourceEnabled(a.sourceId);
 
 /**
  * Runs one adapter if its lease is free. Never throws: failures are logged to

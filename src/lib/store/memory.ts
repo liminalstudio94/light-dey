@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { getSource } from "../sources/registry";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import { ObservationScopeConflict, type DataStore, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow } from "./types";
+import type { DeviceRow } from "../sensors/health";
+import { ObservationScopeConflict, type DataStore, type HeartbeatWrite, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow, type TimelineEntry } from "./types";
 
 /**
  * In-process store for local development and tests. Starts EMPTY — it never
@@ -47,9 +48,10 @@ export class MemoryStore implements DataStore {
       const i = this.observations.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
       if (i >= 0 && (this.observations[i].scope !== r.scope || this.observations[i].scopeRef !== r.scopeRef)) throw new ObservationScopeConflict(this.observations[i].scopeRef);
       const tier = this.partnerTier(r.sourceId) ?? getSource(r.sourceId)?.tier ?? 3;
+      const sourceKind = this.partnerKind(r.sourceId) ?? getSource(r.sourceId)?.kind;
       const { payload: _payload, ...rest } = r;
       void _payload;
-      const row: Observation = { ...rest, id: i >= 0 ? this.observations[i].id : randomUUID(), tier };
+      const row: Observation = { ...rest, id: i >= 0 ? this.observations[i].id : randomUUID(), tier, sourceKind };
       if (i >= 0) {
         if (JSON.stringify({ ...this.observations[i], id: "" }) === JSON.stringify({ ...row, id: "" })) continue;
         this.observations[i] = row;
@@ -58,6 +60,10 @@ export class MemoryStore implements DataStore {
       if (opts.audit) this.events.push({ event: opts.audit.event, actor: opts.audit.actor });
     }
     return n;
+  }
+  private partnerKind(sourceId: string) {
+    for (const v of this.partnerKeys.values()) if (v.sourceId === sourceId) return v.kind;
+    return undefined;
   }
   private partnerTier(sourceId: string) {
     for (const v of this.partnerKeys.values()) if (v.sourceId === sourceId) return v.tier;
@@ -90,6 +96,17 @@ export class MemoryStore implements DataStore {
     for (const s of this.snapshots) m.set(s.areaId, s.mapState);
     return m;
   }
+  async listSnapshots(areaId: string, since: Date): Promise<TimelineEntry[]> {
+    return this.snapshots
+      .filter((x) => x.areaId === areaId && x.at >= since)
+      .reverse()
+      .slice(0, 50)
+      .map((x) => {
+        const d = (x.evidence as { role?: string; sourceName?: string; summary?: string }[]).find((e) => e.role === "decisive");
+        return { mapState: x.mapState, confidence: x.confidence, at: x.at.toISOString(), basis: d ? `${d.sourceName}: ${d.summary}` : null };
+      });
+  }
+
   async recordSnapshotChanges(rows: SnapshotRow[]) {
     // No await between read and write: atomic within this process, like the Postgres advisory lock.
     const prev = new Map<string, MapState>();
@@ -115,5 +132,42 @@ export class MemoryStore implements DataStore {
   }
   async recordVerificationEvent(e: { event: string; actor: string; note?: string }) {
     this.events.push(e);
+  }
+
+  // ---- Sensors ----
+  devices = new Map<string, DeviceRow & { revoked: boolean }>();
+  heartbeats: HeartbeatWrite[] = [];
+  private nonces = new Map<string, number>();
+
+  async getDevice(deviceId: string) {
+    const d = this.devices.get(deviceId);
+    return d ? { deviceId: d.deviceId, areaId: d.areaId, revoked: d.revoked } : null;
+  }
+  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited"> {
+    // No awaits: atomic within the process, like the Postgres row lock.
+    const d = this.devices.get(h.deviceId);
+    if (!d || d.revoked) return "replay";
+    if (d.lastHeartbeatAt && h.receivedAt.getTime() - Date.parse(d.lastHeartbeatAt) < h.minIntervalSeconds * 1000) return "rate_limited";
+    const key = `${h.deviceId}|${h.nonce}`;
+    if (this.nonces.has(key)) return "replay";
+    this.nonces.set(key, h.receivedAt.getTime());
+    this.heartbeats.push(h);
+    Object.assign(d, { lastHeartbeatAt: h.receivedAt.toISOString(), mains: h.mains, powerSource: h.powerSource, batteryPct: h.batteryPct, clockSkewS: h.clockSkewS, selfTest: h.selfTest, networkHash: h.networkHash });
+    return "ok";
+  }
+  async listDevices() {
+    return [...this.devices.values()].filter((d) => !d.revoked).map(({ revoked: _r, ...d }) => (void _r, d));
+  }
+  async pruneSensorData(now: Date) {
+    let nonces = 0;
+    for (const [k, t] of this.nonces) {
+      if (t < now.getTime() - 3_600_000) {
+        this.nonces.delete(k);
+        nonces++;
+      }
+    }
+    const before = this.heartbeats.length;
+    this.heartbeats = this.heartbeats.filter((h) => h.receivedAt.getTime() >= now.getTime() - 7 * 86_400_000);
+    return { nonces, heartbeats: before - this.heartbeats.length };
   }
 }

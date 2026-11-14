@@ -19,25 +19,26 @@ try {
   await sql`alter table lightdey.schema_migrations enable row level security`;
   await sql`alter table lightdey.schema_migrations add column if not exists checksum text`;
   const done = new Map((await sql`select name, checksum from lightdey.schema_migrations`).map((r) => [r.name, r.checksum]));
-  for (const f of files) {
-    const body = readFileSync(new URL(f, dir), "utf8");
-    const checksum = createHash("sha256").update(body).digest("hex");
-    const isSeed = /_seed_/.test(f);
-    if (done.has(f) && (!isSeed || done.get(f) === checksum)) {
-      console.log(`skip   ${f}`);
-      continue;
-    }
-    if (dry) {
-      console.log(`would apply ${f}`);
-      continue;
-    }
+  // Pass 1: new files in order (schema + first-time seeds). Pass 2: re-apply CHANGED seeds last,
+  // so a seed edited for a new schema feature never runs before the migration that enables it.
+  const reseeds = [];
+  const apply = async (f, body, checksum, label) => {
+    if (dry) return console.log(`would ${label.trim()} ${f}`);
     await sql.begin(async (tx) => {
       await tx.unsafe(body);
       await tx`insert into lightdey.schema_migrations (name, checksum) values (${f}, ${checksum})
                on conflict (name) do update set checksum = excluded.checksum, applied_at = now()`;
     });
-    console.log(`${done.has(f) ? "reseed" : "apply "} ${f}`);
+    console.log(`${label} ${f}`);
+  };
+  for (const f of files) {
+    const body = readFileSync(new URL(f, dir), "utf8");
+    const checksum = createHash("sha256").update(body).digest("hex");
+    if (!done.has(f)) await apply(f, body, checksum, "apply ");
+    else if (/_seed_/.test(f) && done.get(f) !== checksum) reseeds.push([f, body, checksum]);
+    else console.log(`skip   ${f}`);
   }
+  for (const [f, body, checksum] of reseeds) await apply(f, body, checksum, "reseed");
 } finally {
   await sql.end();
 }

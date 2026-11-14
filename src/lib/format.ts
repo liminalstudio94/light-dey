@@ -33,18 +33,20 @@ export const FRESHNESS_LABEL: Record<Freshness, string> = { fresh: "Fresh", rece
 export const CONFIDENCE_LABEL: Record<Confidence, string> = { high: "High confidence", medium: "Medium confidence", low: "Low confidence", none: "No confidence yet" };
 
 
-export type MarkerStyle = "solid" | "reported" | "hollow" | "muted";
+export type MarkerStyle = "solid" | "likely" | "reported" | "hollow" | "muted";
 
 /** Labels and styles for each evidence-based map state. Colour = what; style = how sure. */
 export const MAP_STATE_META: Record<MapState, { label: string; short: string; group: AreaState; style: MarkerStyle; help: string }> = {
-  CONFIRMED_ON: { label: "Confirmed: light dey", short: "Confirmed on", group: "LIGHT", style: "solid", help: "Official source or verified reporters." },
-  CONFIRMED_OFF: { label: "Confirmed outage", short: "Confirmed off", group: "NO_LIGHT", style: "solid", help: "Official source (e.g. grid data) or verified reporters." },
+  CONFIRMED_ON: { label: "Confirmed power available", short: "Confirmed on", group: "LIGHT", style: "solid", help: "Measured by a healthy sensor or stated by an official source." },
+  CONFIRMED_OFF: { label: "Confirmed outage", short: "Confirmed off", group: "NO_LIGHT", style: "solid", help: "Measured by a healthy sensor or official outage data." },
+  LIKELY_ON: { label: "Likely power available", short: "Likely on", group: "LIGHT", style: "likely", help: "Independent but indirect evidence (e.g. a sensor behind a changeover, or verified reports agreeing). Not a direct measurement." },
+  LIKELY_OFF: { label: "Likely outage", short: "Likely off", group: "NO_LIGHT", style: "likely", help: "Independent but indirect evidence (e.g. a sensor behind a changeover reads no power, or verified reports agreeing). Not a direct measurement." },
   COMMUNITY_ON: { label: "Reported: light dey", short: "Reported on", group: "LIGHT", style: "reported", help: `${STATUS_CONFIG.confirmationThreshold}+ independent neighbours in the last hour. Not official.` },
   COMMUNITY_OFF: { label: "Reported: no light", short: "Reported off", group: "NO_LIGHT", style: "reported", help: `${STATUS_CONFIG.confirmationThreshold}+ independent neighbours in the last hour. Not official.` },
   CONFLICTING: { label: "Conflicting reports", short: "Conflicting", group: "UNCERTAIN", style: "reported", help: "Sources or neighbours disagree right now." },
   ESTIMATED_ON: { label: "Estimate: usually light", short: "Est. on", group: "LIGHT", style: "hollow", help: "From past reports at this hour. Not live." },
   ESTIMATED_OFF: { label: "Estimate: usually no light", short: "Est. off", group: "NO_LIGHT", style: "hollow", help: "From past reports at this hour. Not live." },
-  UNKNOWN: { label: "Unknown", short: "Unknown", group: "UNKNOWN", style: "muted", help: "Not enough verified data." },
+  UNKNOWN: { label: "Not enough current evidence", short: "No evidence", group: "UNKNOWN", style: "muted", help: "No sensor, official data or recent report. Help confirm this area." },
 };
 
 export const TIER_LABEL: Record<1 | 2 | 3 | 4, string> = { 1: "Official", 2: "Verified", 3: "Community", 4: "Estimate" };
