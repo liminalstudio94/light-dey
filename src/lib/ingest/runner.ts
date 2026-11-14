@@ -3,6 +3,7 @@ import { EVIDENCE_CONFIG } from "../config";
 import { historyStats } from "../history";
 import type { DataStore, NewObservation, RunResult } from "../store/types";
 import type { AreaStatus, HourPattern } from "../types";
+import { isSourceEnabled } from "./switches";
 import { defaultFetcher, fetchWithRetry, RetryError, type Fetcher } from "./http";
 import { IKEJA_FEED_URL, noticeObservations, parseRss } from "./ikejaNotices";
 import { NIGGRID_DISCO_URL, niggridObservations, parseDiscoLoadProfile } from "./niggrid";
@@ -45,7 +46,7 @@ export const ADAPTERS: Adapter[] = [
   },
 ];
 
-const enabled = (a: Adapter) => process.env[a.enabledEnv] !== "0";
+const enabled = (a: Adapter) => isSourceEnabled(a.sourceId) && process.env[a.enabledEnv] !== "0";
 
 /**
  * Runs one adapter if its lease is free. Never throws: failures are logged to

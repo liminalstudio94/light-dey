@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { getArea } from "./areas";
 import { EVIDENCE_CONFIG } from "./config";
-import type { DataStore } from "./store/types";
+import { ObservationScopeConflict, type DataStore } from "./store/types";
 
 export const PARTNER_RATE_LIMIT_PER_HOUR = 120;
 
@@ -46,22 +46,29 @@ export async function ingestPartnerObservation(store: DataStore, authHeader: str
     return { ok: false, status: 429, code: "rate_limited", message: "Hourly limit reached for this key" };
   }
 
-  const written = await store.upsertObservations([
-    {
-      sourceId: partner.sourceId,
-      externalId: o.externalId,
-      scope: "neighbourhood",
-      scopeRef: o.neighbourhoodId,
-      kind: "status_report",
-      status: o.status,
-      valueNum: null,
-      title: o.note ?? null,
-      url: null,
-      observedAt: new Date(t).toISOString(),
-      validUntil: new Date(t + EVIDENCE_CONFIG.partnerMaxAgeMinutes * 60_000).toISOString(),
-      neighbourhoodIds: [],
-    },
-  ]);
+  let written: number;
+  try {
+    written = await store.upsertObservations([
+      {
+        sourceId: partner.sourceId,
+        externalId: o.externalId,
+        scope: "neighbourhood",
+        scopeRef: o.neighbourhoodId,
+        kind: "status_report",
+        status: o.status,
+        valueNum: null,
+        title: o.note ?? null,
+        url: null,
+        observedAt: new Date(t).toISOString(),
+        validUntil: new Date(t + EVIDENCE_CONFIG.partnerMaxAgeMinutes * 60_000).toISOString(),
+        neighbourhoodIds: [],
+      },
+    ]);
+  } catch (e) {
+    // Concurrent submissions that passed the pre-check still can't move a claim to another area.
+    if (e instanceof ObservationScopeConflict) return { ok: false, status: 409, code: "external_id_conflict", message: "externalId was already used for a different neighbourhood" };
+    throw e;
+  }
   if (written) await store.recordVerificationEvent({ sourceId: partner.sourceId, observationExternalId: o.externalId, event: "partner_ingested", actor: `key:${partner.keyId}` });
   return { ok: true, written: written > 0 };
 }

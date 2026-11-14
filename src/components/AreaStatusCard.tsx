@@ -29,8 +29,8 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
           <dd className="mt-0.5 font-semibold text-ink">{status.recentReports}</dd>
         </div>
         <div>
-          <dt className="text-ink-3">Confirming</dt>
-          <dd className="mt-0.5 flex items-center gap-1 font-semibold text-ink"><Users className="h-3 w-3" aria-hidden />{status.confirmingUsers}</dd>
+          <dt className="text-ink-3">Neighbours (1h)</dt>
+          <dd className="mt-0.5 flex items-center gap-1 font-semibold text-ink"><Users className="h-3 w-3" aria-hidden />{status.onReporters + status.offReporters}</dd>
         </div>
         <div>
           <dt className="text-ink-3">Last update</dt>

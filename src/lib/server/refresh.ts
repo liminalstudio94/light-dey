@@ -13,18 +13,19 @@ export async function refreshDueSources(opts: { force?: boolean; snapshot?: "alw
   const store = getStore();
   const now = new Date();
   const runs = await Promise.all(ADAPTERS.map((a) => runAdapter(store, a, { now, force: opts.force })));
-  let patterns: number | "skipped" = "skipped";
+  let patterns: number | "skipped" | "error" = "skipped";
   if (await store.acquireLease("historical_estimate", 60, now, { force: opts.force, runningMinutes: 2 })) {
     try {
       patterns = await recomputePatterns(store, now);
     } catch (e) {
+      patterns = "error";
       console.error("[refresh:patterns]", e);
     } finally {
       await store.releaseLease("historical_estimate").catch(() => {});
     }
   }
   const anyRan = runs.some((r) => r.status !== "skipped") || patterns !== "skipped";
-  const errors = runs.filter((r) => r.status === "error").length;
+  const errors = runs.filter((r) => r.status === "error").length + (patterns === "error" ? 1 : 0);
   const summary = { at: now.toISOString(), errors, runs: runs.map(({ log, ...r }) => ({ ...r, log: log.slice(-4) })), patterns };
   if (opts.snapshot === "if-changed" && !anyRan) return { ...summary, snapshots: 0, mapCounts: null };
   const overview = await getOverview(new Date());

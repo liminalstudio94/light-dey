@@ -1,7 +1,7 @@
 import "server-only";
 import postgres from "postgres";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import type { DataStore, NewObservation, NewReport, PartnerKey, RunResult, SnapshotRow } from "./types";
+import { ObservationScopeConflict, type DataStore, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow } from "./types";
 
 type Row = {
   id: string;
@@ -130,11 +130,16 @@ export class PostgresStore implements DataStore {
             scope = excluded.scope, scope_ref = excluded.scope_ref, kind = excluded.kind, status = excluded.status, value_num = excluded.value_num,
             title = excluded.title, url = excluded.url, observed_at = excluded.observed_at, valid_until = excluded.valid_until,
             payload = excluded.payload, fetched_at = now()
-          where (o_old.scope, o_old.scope_ref, o_old.kind, o_old.status, o_old.value_num, o_old.title, o_old.url, o_old.observed_at, o_old.valid_until, o_old.payload)
+          where o_old.scope = excluded.scope and o_old.scope_ref is not distinct from excluded.scope_ref and o_old.kind = excluded.kind
+            and (o_old.scope, o_old.scope_ref, o_old.kind, o_old.status, o_old.value_num, o_old.title, o_old.url, o_old.observed_at, o_old.valid_until, o_old.payload)
                 is distinct from
                 (excluded.scope, excluded.scope_ref, excluded.kind, excluded.status, excluded.value_num, excluded.title, excluded.url, excluded.observed_at, excluded.valid_until, excluded.payload)
           returning id`;
-        const [{ id }] = changed.length ? changed : await tx<{ id: string }[]>`select id from lightdey.observations where source_id = ${r.sourceId} and external_id = ${r.externalId}`;
+        // An observation never moves to another scope/area; the conflict clause above refuses it atomically.
+        const [{ id, scope_ref }] = changed.length
+          ? [{ id: changed[0].id, scope_ref: r.scopeRef }]
+          : await tx<{ id: string; scope_ref: string | null }[]>`select id, scope_ref from lightdey.observations where source_id = ${r.sourceId} and external_id = ${r.externalId}`;
+        if (scope_ref !== r.scopeRef) throw new ObservationScopeConflict(scope_ref);
         // Always reconcile area links (including clearing them), and count a link change as a write.
         const current = (await tx<{ n: string }[]>`select neighbourhood_id as n from lightdey.observation_neighbourhoods where observation_id = ${id}`).map((x) => x.n).sort();
         const wanted = [...new Set(r.neighbourhoodIds)].sort();
