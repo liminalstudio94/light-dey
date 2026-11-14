@@ -105,3 +105,15 @@ describe("Qodo PR #4 fixes", () => {
     expect(screen.getAllByRole("link")).toHaveLength(2);
   });
 });
+
+describe("Qodo re-review on PR #4", () => {
+  it("a flagged report never supplies the 'latest evidence' time (#1)", async () => {
+    const { latestEvidenceAt } = await import("@/lib/share");
+    const s = aggregateAreaStatus("yaba", [rep("off", 2, "a", { verification: "flagged" })], NOW);
+    expect(s.lastReportAt).toBeNull();
+    expect(s.freshness).toBe("none");
+    expect(latestEvidenceAt(s)).toBeNull();
+    // A valid report that has merely aged out still counts as history.
+    expect(aggregateAreaStatus("yaba", [rep("off", 90, "a")], NOW).lastReportAt).not.toBeNull();
+  });
+});

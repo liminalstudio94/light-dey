@@ -24,7 +24,8 @@ export function HomeLive({ initial }: { initial: Overview }) {
   const popular = AREAS.filter((a) => a.popular).map((a) => data.statuses.find((s) => s.areaId === a.id)!).filter(Boolean);
   const mc = data.mapCounts ?? ({} as Record<MapState, number>);
   const n = (m: MapState) => mc[m] ?? 0;
-  const confirmed = n("CONFIRMED_ON") + n("CONFIRMED_OFF") + n("COMMUNITY_ON") + n("COMMUNITY_OFF");
+  // Conflicting areas have live evidence too — it just disagrees.
+  const confirmed = n("CONFIRMED_ON") + n("CONFIRMED_OFF") + n("COMMUNITY_ON") + n("COMMUNITY_OFF") + n("CONFLICTING");
   const tiles: { state: AreaState; label: string; total: number; detail: string }[] = [
     { state: "LIGHT", label: "Light dey", total: n("CONFIRMED_ON") + n("COMMUNITY_ON"), detail: `${n("CONFIRMED_ON")} confirmed · ${n("COMMUNITY_ON")} reported` },
     { state: "NO_LIGHT", label: "No light", total: n("CONFIRMED_OFF") + n("COMMUNITY_OFF"), detail: `${n("CONFIRMED_OFF")} confirmed · ${n("COMMUNITY_OFF")} reported` },
@@ -156,8 +157,9 @@ function GridCard({ grid }: { grid: GridContext | null }) {
         <>
           <p className="mt-2 text-sm text-ink">
             {grid.collapse ? <strong className="text-off">Grid collapse — all Lagos areas marked as confirmed outage. </strong> : null}
-            {grid.discos.map((d) => `${d.name}: ${formatMw(d.mw)} MW`).join(" · ")}
-            {grid.totalMw !== null && <span className="text-ink-3"> · all DisCos {formatMw(grid.totalMw)} MW</span>}
+            {/* Each figure carries its own time when it differs from the newest one. */}
+            {grid.discos.map((d) => `${d.name}: ${formatMw(d.mw)} MW${d.asOf !== grid.asOf ? ` (as at ${lagosTime(d.asOf)})` : ""}`).join(" · ")}
+            {grid.totalMw !== null && <span className="text-ink-3"> · all DisCos {formatMw(grid.totalMw)} MW{grid.totalAsOf && grid.totalAsOf !== grid.asOf ? ` (as at ${lagosTime(grid.totalAsOf)})` : ""}</span>}
           </p>
           <p className="mt-1 text-xs text-ink-3">Power reaching a DisCo doesn&rsquo;t mean every feeder has light (load shedding). We only use these figures to confirm outages.</p>
         </>
