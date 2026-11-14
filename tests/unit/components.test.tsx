@@ -46,8 +46,24 @@ describe("shareText", () => {
     expect(t).toMatch(/Last report \d{1,2}:\d{2}/);
     expect(t).toMatch(/Medium confidence/);
   });
+  it("an official outage never quotes neighbours who reported light (Qodo pass 3, #2-1)", () => {
+    const s = aggregateAreaStatus("ajah", ["a", "b", "c"].map((w, i) => rep("on", i + 1, w, { areaId: "ajah" })), NOW);
+    const official = { ...s, state: "NO_LIGHT" as const, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
+    const t = shareText("Ajah", official, NOW.getTime());
+    expect(t).toMatch(/confirmed by NISO grid data/);
+    expect(t).not.toMatch(/3 people/);
+  });
   it("never claims light for an unknown area", () => {
     const t = shareText("Yaba", aggregateAreaStatus("yaba", [], NOW), NOW.getTime());
     expect(t).not.toMatch(/LIGHT DEY!/);
+  });
+});
+
+describe("Qodo pass 4 on PR #2 — share text", () => {
+  it("official/verified conflicts never quote '0 vs 0' neighbours (#2)", () => {
+    const empty = { ...aggregateAreaStatus("ajah", [], NOW), mapState: "CONFLICTING" as const, state: "UNCERTAIN" as const };
+    expect(shareText("Ajah", empty, NOW.getTime())).toMatch(/^Sources disagree about light in Ajah right now/);
+    const mixed = { ...aggregateAreaStatus("ajah", [rep("on", 1, "a", { areaId: "ajah" }), rep("off", 2, "b", { areaId: "ajah" })], NOW), mapState: "CONFLICTING" as const };
+    expect(shareText("Ajah", mixed, NOW.getTime())).toMatch(/1 say light dey, 1 say no light/);
   });
 });

@@ -26,18 +26,20 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
           <dd className="mt-0.5 font-semibold text-ink">{status.recentReports}</dd>
         </div>
         <div>
-          <dt className="text-ink-3">Confirming</dt>
-          <dd className="mt-0.5 flex items-center gap-1 font-semibold text-ink"><Users className="h-3 w-3" aria-hidden />{status.confirmingUsers}</dd>
+          <dt className="text-ink-3">Neighbours (1h)</dt>
+          <dd className="mt-0.5 flex items-center gap-1 font-semibold text-ink"><Users className="h-3 w-3" aria-hidden />{status.onReporters + status.offReporters}</dd>
         </div>
         <div>
-          <dt className="text-ink-3">Last report</dt>
+          <dt className="text-ink-3">Last community report</dt>
           <dd className="mt-0.5 font-semibold text-ink">{timeAgo(status.lastReportAt, now)}</dd>
         </div>
       </dl>
       <p className="mt-3 border-t border-line pt-3 text-xs text-ink-2">
-        {unconfirmed
-          ? `1–2 people say ${status.leaning === "on" ? "light dey" : "no light"} · needs 3 to confirm`
-          : `${CONFIDENCE_LABEL[status.confidence]} · ${FRESHNESS_LABEL[status.freshness]}`}
+        {status.mapState && status.explanation
+          ? `${CONFIDENCE_LABEL[status.confidence]} · ${status.explanation}`
+          : unconfirmed
+            ? `1–2 people say ${status.leaning === "on" ? "light dey" : "no light"} · needs 3 to confirm`
+            : `${CONFIDENCE_LABEL[status.confidence]} · ${FRESHNESS_LABEL[status.freshness]}`}
       </p>
     </Link>
   );

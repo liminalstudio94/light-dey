@@ -36,3 +36,29 @@ export const TIMEZONE = "Africa/Lagos";
 export const LAGOS_UTC_OFFSET_MINUTES = 60;
 
 export type StatusConfig = typeof STATUS_CONFIG;
+
+/** Evidence engine rules (see ARCHITECTURE.md#evidence). */
+export const EVIDENCE_CONFIG = {
+  /**
+   * Official grid/DisCo figures older than this are ignored. NISO publishes roughly
+   * hourly, so this must exceed the cadence plus fetch lag; recoveries still show
+   * immediately because a newer reading supersedes an older one.
+   */
+  officialMaxAgeMinutes: 90,
+  /** A DisCo allocated at or below this many MW is treated as getting no grid supply. */
+  discoOutageMaxMw: 5,
+  /** National total DisCo allocation at or below this many MW is treated as a grid collapse. */
+  gridCollapseMaxMw: 300,
+  /** Partner / verified-reporter neighbourhood reports expire after this. */
+  partnerMaxAgeMinutes: 60,
+  /** Independent verified reporters needed to confirm on their own. */
+  verifiedConfirmCount: 2,
+  /** Official notices are linked on area pages for this long. */
+  noticeMaxAgeDays: 14,
+  /** patternMaxAgeHours: patterns older than this (refresh job stopped) are ignored. */
+  estimate: { minSamples: 6, minProbability: 0.7, windowDays: 30, patternMaxAgeHours: 3 },
+  /** Freshness labels for official readings (they publish about hourly, unlike minute-by-minute reports). */
+  officialFreshness: { freshMaxMinutes: 30, recentMaxMinutes: 60, ageingMaxMinutes: 90 },
+  /** A deciding official reading older than this lowers confidence from high to medium. */
+  officialHighConfidenceMaxMinutes: 60,
+} as const;

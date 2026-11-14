@@ -3,7 +3,11 @@ import type { AreaState, AreaStatus, Confidence, Freshness, PowerStatus, Report 
 
 const MIN = 60_000;
 
-export function freshnessOf(ageMinutes: number | null, cfg: StatusConfig = STATUS_CONFIG): Freshness {
+export interface FreshnessScale {
+  freshness: { freshMaxMinutes: number; recentMaxMinutes: number; ageingMaxMinutes: number };
+}
+
+export function freshnessOf(ageMinutes: number | null, cfg: FreshnessScale = STATUS_CONFIG): Freshness {
   if (ageMinutes === null) return "none";
   const f = cfg.freshness;
   if (ageMinutes <= f.freshMaxMinutes) return "fresh";
