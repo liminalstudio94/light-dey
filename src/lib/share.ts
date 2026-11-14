@@ -35,7 +35,10 @@ export function shareText(areaName: string, s: AreaStatus, now = Date.now()): st
     case "COMMUNITY_OFF":
       return `NO LIGHT reported in ${areaName}: ${s.confirmingUsers} neighbours reported an outage in the last hour (not official).${when}${conf} Check Light Dey? before you go:`;
     case "CONFLICTING":
-      return `Light status in ${areaName} is mixed — reports disagree right now.${when} Help confirm on Light Dey?:`;
+      // Quote neighbour counts only when the neighbours themselves disagree; otherwise say sources disagree.
+      return s.onReporters > 0 && s.offReporters > 0
+        ? `Light status in ${areaName} is mixed — ${s.onReporters} say light dey, ${s.offReporters} say no light.${when} Help confirm on Light Dey?:`
+        : `Sources disagree about light in ${areaName} right now.${when} Help confirm on Light Dey?:`;
     default:
       // Unknown or estimate: never deny reports that exist; say they're not enough yet.
       return hasRecentReports(s)

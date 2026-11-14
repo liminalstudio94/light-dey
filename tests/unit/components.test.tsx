@@ -145,3 +145,12 @@ describe("Qodo pass 3 on PR #4", () => {
     expect(screen.getByRole("option", { name: /Ajah/ })).toHaveTextContent("Confirmed off");
   });
 });
+
+describe("Qodo pass 4 on PR #2 — share text", () => {
+  it("official/verified conflicts never quote '0 vs 0' neighbours (#2)", () => {
+    const empty = { ...aggregateAreaStatus("ajah", [], NOW), mapState: "CONFLICTING" as const, state: "UNCERTAIN" as const };
+    expect(shareText("Ajah", empty, NOW.getTime())).toMatch(/^Sources disagree about light in Ajah right now/);
+    const mixed = { ...aggregateAreaStatus("ajah", [rep("on", 1, "a", { areaId: "ajah" }), rep("off", 2, "b", { areaId: "ajah" })], NOW), mapState: "CONFLICTING" as const };
+    expect(shareText("Ajah", mixed, NOW.getTime())).toMatch(/1 say light dey, 1 say no light/);
+  });
+});

@@ -4,7 +4,6 @@ import { distanceKm, getArea, AREAS } from "@/lib/areas";
 import { STATUS_CONFIG } from "@/lib/config";
 import { CONFIDENCE_LABEL, FRESHNESS_LABEL, MAP_STATE_META, STATE_META, hourLabel, lagosTime, timeAgo } from "@/lib/format";
 import { hasRecentReports, latestEvidenceAt } from "@/lib/share";
-import { freshnessOf } from "@/lib/status";
 import type { Overview } from "@/lib/types";
 import { AreaStatusCard } from "./AreaStatusCard";
 import { EvidenceList } from "./EvidenceList";
@@ -45,6 +44,10 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
   const shownSide = meta.group === "LIGHT" ? "on" : meta.group === "NO_LIGHT" ? "off" : null;
   const agreeing = shownSide === "on" ? s.onReporters : shownSide === "off" ? s.offReporters : null;
   const latest = latestEvidenceAt(s);
+  // Freshness comes from the evidence behind the status, on that evidence's own scale
+  // (official readings age over 90 min, reports over 60) — never recomputed on the community scale.
+  const deciding = s.evidence?.find((e) => e.role === "decisive") ?? s.evidence?.find((e) => e.role !== "context" && e.role !== "estimate");
+  const headlineFreshness = deciding?.freshness ?? (s.lastReportAt ? s.freshness : null);
 
   return (
     <>
@@ -73,7 +76,7 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
           </div>
           <div>
             <dt className="flex items-center gap-1 text-ink-3"><ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Confidence</dt>
-            <dd className="mt-1 font-semibold">{CONFIDENCE_LABEL[s.confidence]}{latest ? ` · ${FRESHNESS_LABEL[freshnessOf((now - Date.parse(latest)) / 60_000)]}` : ""}</dd>
+            <dd className="mt-1 font-semibold">{CONFIDENCE_LABEL[s.confidence]}{headlineFreshness ? ` · ${FRESHNESS_LABEL[headlineFreshness]}` : ""}</dd>
           </div>
         </dl>
         {s.locationMatchedReports > 0 && (

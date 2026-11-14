@@ -38,25 +38,44 @@ export class MemoryStore implements DataStore {
   }
 
   /** Mirrors PostgresStore: only unexpired rows from active sources (registry or approved partner). */
+  /** Mirrors PostgresStore: newest reading per measure first, THEN drop it if expired; only active sources. */
   async listObservations(now: Date) {
-    return this.observations.filter((o) => Date.parse(o.validUntil) >= now.getTime() && (getSource(o.sourceId)?.active || this.partnerTier(o.sourceId) !== undefined));
+    const t = now.getTime();
+    const newest = new Map<string, Observation>();
+    const notices: Observation[] = [];
+    for (const o of this.observations) {
+      if (o.kind === "notice") {
+        notices.push(o);
+        continue;
+      }
+      if (Date.parse(o.observedAt) > t + 2 * 60_000) continue;
+      const key = `${o.sourceId}|${o.kind}|${o.scope}|${o.scopeRef ?? ""}`;
+      const prev = newest.get(key);
+      if (!prev || Date.parse(o.observedAt) > Date.parse(prev.observedAt)) newest.set(key, o);
+    }
+    return [...newest.values(), ...notices].filter((o) => Date.parse(o.validUntil) >= t && (getSource(o.sourceId)?.active || this.partnerTier(o.sourceId) !== undefined));
   }
   async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}) {
     let n = 0;
+    // Atomic like the Postgres transaction: work on a copy, commit only if every row succeeds.
+    const work = [...this.observations];
+    const events: { event: string; actor: string }[] = [];
     for (const r of rows) {
-      const i = this.observations.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
-      if (i >= 0 && (this.observations[i].scope !== r.scope || this.observations[i].scopeRef !== r.scopeRef)) throw new ObservationScopeConflict(this.observations[i].scopeRef);
+      const i = work.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
+      if (i >= 0 && (work[i].scope !== r.scope || work[i].scopeRef !== r.scopeRef)) throw new ObservationScopeConflict(work[i].scopeRef);
       const tier = this.partnerTier(r.sourceId) ?? getSource(r.sourceId)?.tier ?? 3;
       const { payload: _payload, ...rest } = r;
       void _payload;
-      const row: Observation = { ...rest, id: i >= 0 ? this.observations[i].id : randomUUID(), tier };
+      const row: Observation = { ...rest, id: i >= 0 ? work[i].id : randomUUID(), tier };
       if (i >= 0) {
-        if (JSON.stringify({ ...this.observations[i], id: "" }) === JSON.stringify({ ...row, id: "" })) continue;
-        this.observations[i] = row;
-      } else this.observations.push(row);
+        if (JSON.stringify({ ...work[i], id: "" }) === JSON.stringify({ ...row, id: "" })) continue;
+        work[i] = row;
+      } else work.push(row);
       n++;
-      if (opts.audit) this.events.push({ event: opts.audit.event, actor: opts.audit.actor });
+      if (opts.audit) events.push({ event: opts.audit.event, actor: opts.audit.actor });
     }
+    this.observations = work;
+    this.events.push(...events);
     return n;
   }
   private partnerTier(sourceId: string) {
