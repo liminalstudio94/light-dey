@@ -102,3 +102,17 @@ describe("API integration (route handlers + store + engine)", () => {
     expect(store.observations[0]).toMatchObject({ url: "https://www.ikejaelectric.com/b", neighbourhoodIds: [] });
   });
 });
+
+describe("Qodo pass 4 on PR #2", () => {
+  it("an expired newer reading never lets an older, longer-lived one revive (#1)", async () => {
+    const store = new MemoryStore();
+    const now = Date.now();
+    const at = (m: number) => new Date(now + m * 60_000).toISOString();
+    // older outage valid for 2h, newer normal reading already expired
+    await store.upsertObservations([
+      { sourceId: "niso_niggrid", externalId: "old", scope: "disco", scopeRef: "eko", kind: "disco_allocation", status: "off", valueNum: 0, title: null, url: null, observedAt: at(-60), validUntil: at(60), neighbourhoodIds: [] },
+      { sourceId: "niso_niggrid", externalId: "new", scope: "disco", scopeRef: "eko", kind: "disco_allocation", status: null, valueNum: 400, title: null, url: null, observedAt: at(-30), validUntil: at(-1), neighbourhoodIds: [] },
+    ]);
+    expect(await store.listObservations(new Date(now))).toEqual([]);
+  });
+});
