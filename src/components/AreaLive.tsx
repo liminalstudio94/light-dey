@@ -34,7 +34,7 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
         <StatusBadge state={s.state} size="lg" />
         <p className="mt-4 font-display text-4xl font-extrabold tracking-tight sm:text-5xl">{m.label}{s.state === "LIGHT" ? "!" : ""}</p>
         <p className="mt-2 max-w-xl text-sm text-ink-2">{s.explanation ?? EXPLAIN[s.state]}</p>
-        {s.state === "UNKNOWN" && s.leaning && (
+        {!s.explanation && s.state === "UNKNOWN" && s.leaning && (
           <p className="mt-2 text-sm font-medium text-ink">{s.leaning === "on" ? s.onReporters : s.offReporters} of 3 needed people say {s.leaning === "on" ? "light dey" : "no light"}.</p>
         )}
         <dl className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">

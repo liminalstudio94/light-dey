@@ -79,6 +79,14 @@ describe("API integration (route handlers + store + engine)", () => {
     expect((await getStatus()).status).toBe(500);
   });
 
+  it("memory store mirrors Postgres: inactive or unknown sources never affect status (Qodo pass 3, #2-5)", async () => {
+    const now = Date.now();
+    const row = (sourceId: string) => ({ sourceId, externalId: `x-${sourceId}`, scope: "disco" as const, scopeRef: "eko", kind: "disco_allocation" as const, status: "off" as const, valueNum: 0, title: null, url: null, observedAt: new Date(now - 60_000).toISOString(), validUntil: new Date(now + 3_600_000).toISOString(), neighbourhoodIds: [] });
+    await store.upsertObservations([row("eko_disco_notices"), row("made_up_source")]); // inactive registry source + unknown source
+    expect(await store.listObservations(new Date())).toHaveLength(0);
+    expect(area(await status(), "ajah").mapState).toBe("UNKNOWN");
+  });
+
   it("observation upserts are idempotent", async () => {
     const row = { sourceId: "niso_niggrid", externalId: "x", scope: "national" as const, scopeRef: null, kind: "grid_total" as const, status: null, valueNum: 3000, title: null, url: null, observedAt: new Date().toISOString(), validUntil: new Date(Date.now() + 60_000).toISOString(), neighbourhoodIds: [] };
     expect(await store.upsertObservations([row])).toBe(1);

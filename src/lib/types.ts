@@ -125,6 +125,8 @@ export interface HourPattern {
   hour: number;
   lightHours: number;
   knownHours: number;
+  /** When the pattern was last recomputed (stale patterns are ignored). */
+  computedAt?: string;
 }
 
 export interface GridContext {

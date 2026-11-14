@@ -35,8 +35,9 @@ export class MemoryStore implements DataStore {
     return this.reports.filter((r) => r.networkHash === networkHash && Date.parse(r.createdAt) >= s).length;
   }
 
+  /** Mirrors PostgresStore: only unexpired rows from active sources (registry or approved partner). */
   async listObservations(now: Date) {
-    return this.observations.filter((o) => Date.parse(o.validUntil) >= now.getTime());
+    return this.observations.filter((o) => Date.parse(o.validUntil) >= now.getTime() && (getSource(o.sourceId)?.active || this.partnerTier(o.sourceId) !== undefined));
   }
   async upsertObservations(rows: NewObservation[]) {
     let n = 0;
@@ -71,7 +72,8 @@ export class MemoryStore implements DataStore {
     return this.patterns.filter((p) => p.hour === hour);
   }
   async replaceHourPatterns(rows: HourPattern[]) {
-    this.patterns = rows;
+    const computedAt = new Date().toISOString();
+    this.patterns = rows.map((r) => ({ ...r, computedAt: r.computedAt ?? computedAt }));
   }
   async latestMapStates() {
     const m = new Map<string, MapState>();
