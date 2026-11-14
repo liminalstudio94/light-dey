@@ -25,12 +25,23 @@ function overview(grid: Overview["grid"]): Overview {
 describe("HomeLive (Qodo re-review on PR #4)", () => {
   it("counts conflicting areas as having live evidence (#2)", () => {
     render(<HomeLive initial={overview(null)} />);
-    expect(screen.getByText(/1 of 41 areas have live evidence right now/)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 41 areas have current evidence/)).toBeInTheDocument();
   });
   it("labels each grid figure with its own time when they differ (#3)", () => {
     const t = (min: number) => new Date(NOW.getTime() - min * 60_000).toISOString();
     render(<HomeLive initial={overview({ asOf: t(5), totalMw: 3216, totalAsOf: t(5), discos: [{ id: "eko", name: "Eko DisCo (EKEDP)", mw: 482, asOf: t(50) }, { id: "ikeja", name: "Ikeja Electric", mw: 493, asOf: t(5) }], sourceUrl: "https://www.niggrid.org/DisCoLoadProfile", collapse: false })} />);
     expect(screen.getByText(/Eko DisCo \(EKEDP\): 482 MW \(as at \d{1,2}:\d{2}/)).toBeInTheDocument();
     expect(screen.getByText(/Ikeja Electric: 493 MW(?! \(as at)/)).toBeInTheDocument();
+  });
+});
+
+describe("HomeLive (Qodo pass 5 on PR #6)", () => {
+  it("the 'No current evidence' tile counts prediction-only areas too", () => {
+    const o = overview(null);
+    o.mapCounts = { ...o.mapCounts, UNKNOWN: 38, ESTIMATED_ON: 2, CONFLICTING: 1 } as never;
+    render(<HomeLive initial={o} />);
+    const tile = screen.getByText("No current evidence").closest("div")!;
+    expect(tile).toHaveTextContent("40");
+    expect(tile).toHaveTextContent("2 of these have only a historical prediction");
   });
 });

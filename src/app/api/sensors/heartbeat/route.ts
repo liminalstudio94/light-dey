@@ -1,8 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { allowNetwork, readBodyLimited } from "@/lib/sensors/guard";
 import { ingestHeartbeat } from "@/lib/sensors/ingest";
 import { MAX_BODY_BYTES } from "@/lib/sensors/protocol";
 import { clientIp, hashNetwork } from "@/lib/server/identity";
+import { snapshotIfDue } from "@/lib/server/refresh";
 import { getStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,16 @@ export async function POST(req: NextRequest) {
   if (raw === null) return tooLarge();
   try {
     const r = await ingestHeartbeat(getStore(), raw, req.headers.get("x-lightdey-signature"), network);
-    return r.ok ? NextResponse.json({ ok: true }, { status: 202 }) : NextResponse.json({ error: r.message, code: r.code }, { status: r.status });
+    if (r.ok) {
+      // A new reading may change the area's state: record it on the timeline (lease-limited, after responding).
+      try {
+        after(() => snapshotIfDue().catch((e) => console.error("[heartbeat:snapshot]", e)));
+      } catch {
+        /* outside a request scope (tests) */
+      }
+      return NextResponse.json({ ok: true }, { status: 202 });
+    }
+    return NextResponse.json({ error: r.message, code: r.code }, { status: r.status });
   } catch (e) {
     console.error("[api/sensors/heartbeat]", e);
     return NextResponse.json({ error: "Could not record heartbeat", code: "server_error" }, { status: 500 });

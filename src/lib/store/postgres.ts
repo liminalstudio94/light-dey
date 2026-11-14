@@ -90,12 +90,12 @@ export class PostgresStore implements DataStore {
       with newest as (
         select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
         from lightdey.observations
-        where kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
+        where kind <> 'notice' and withdrawn_at is null and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
         order by source_id, kind, scope, coalesce(scope_ref, ''), observed_at desc
       ), picked as (
         select * from newest where valid_until >= ${now}
         union all
-        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
+        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice' and withdrawn_at is null
       )
       select o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until,
              s.trust_tier as tier, s.kind as source_kind, array_remove(array_agg(onb.neighbourhood_id), null) as areas
@@ -271,17 +271,21 @@ export class PostgresStore implements DataStore {
     return rows.length ? { deviceId: rows[0].id, areaId: rows[0].neighbourhood_id, revoked: rows[0].revoked_at !== null } : null;
   }
 
-  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited"> {
+  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited" | "out_of_order"> {
     return this.sql.begin(async (tx) => {
-      // Row lock serialises heartbeats per device (rate limit + nonce check can't race).
-      const [dev] = await tx<{ last_heartbeat_at: Date | null }[]>`select last_heartbeat_at from lightdey.devices where id = ${h.deviceId} and revoked_at is null for update`;
+      // Row lock serialises heartbeats per device (rate limit, ordering and nonce check can't race).
+      const [dev] = await tx<{ last_heartbeat_at: Date | null; last_device_ts: Date | null }[]>`select last_heartbeat_at, last_device_ts from lightdey.devices where id = ${h.deviceId} and revoked_at is null for update`;
       if (!dev) return "replay"; // revoked between lookup and write: treat as rejected
       if (dev.last_heartbeat_at && h.receivedAt.getTime() - dev.last_heartbeat_at.getTime() < h.minIntervalSeconds * 1000) return "rate_limited";
       const nonce = await tx`insert into lightdey.sensor_nonces (device_id, nonce, seen_at) values (${h.deviceId}, ${h.nonce}, ${h.receivedAt}) on conflict do nothing returning nonce`;
       if (!nonce.length) return "replay";
+      // A held-back older reading must never overwrite a newer one.
+      if (dev.last_device_ts && h.deviceTs.getTime() <= dev.last_device_ts.getTime()) return "out_of_order";
       await tx`insert into lightdey.sensor_heartbeats (device_id, received_at, device_ts, mains, power_source, battery_pct, self_test, firmware, network_hash)
                values (${h.deviceId}, ${h.receivedAt}, ${h.deviceTs}, ${h.mains}, ${h.powerSource}, ${h.batteryPct}, ${h.selfTest}, ${h.firmware}, ${h.networkHash})`;
-      await tx`update lightdey.devices set last_heartbeat_at = ${h.receivedAt}, last_mains = ${h.mains}, last_power_source = ${h.powerSource},
+      // Freshness uses the EARLIER of device and server time, so a delayed message can't look current.
+      const observed = new Date(Math.min(h.receivedAt.getTime(), h.deviceTs.getTime()));
+      await tx`update lightdey.devices set last_heartbeat_at = ${observed}, last_device_ts = ${h.deviceTs}, last_mains = ${h.mains}, last_power_source = ${h.powerSource},
                  last_battery_pct = ${h.batteryPct}, last_clock_skew_s = ${h.clockSkewS}, last_self_test = ${h.selfTest}, last_firmware = ${h.firmware},
                  last_network_hash = ${h.networkHash}
                where id = ${h.deviceId}`;

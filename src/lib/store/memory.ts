@@ -39,7 +39,6 @@ export class MemoryStore implements DataStore {
     return this.reports.filter((r) => r.networkHash === networkHash && Date.parse(r.createdAt) >= s).length;
   }
 
-  /** Mirrors PostgresStore: only unexpired rows from active sources (registry or approved partner). */
   /** Mirrors PostgresStore: newest reading per measure first, THEN drop it if expired; only active sources. */
   async listObservations(now: Date) {
     const t = now.getTime();
@@ -158,12 +157,13 @@ export class MemoryStore implements DataStore {
   devices = new Map<string, DeviceRow & { revoked: boolean }>();
   heartbeats: HeartbeatWrite[] = [];
   private nonces = new Map<string, number>();
+  private lastDeviceTs = new Map<string, number>();
 
   async getDevice(deviceId: string) {
     const d = this.devices.get(deviceId);
     return d ? { deviceId: d.deviceId, areaId: d.areaId, revoked: d.revoked } : null;
   }
-  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited"> {
+  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited" | "out_of_order"> {
     // No awaits: atomic within the process, like the Postgres row lock.
     const d = this.devices.get(h.deviceId);
     if (!d || d.revoked) return "replay";
@@ -171,8 +171,10 @@ export class MemoryStore implements DataStore {
     const key = `${h.deviceId}|${h.nonce}`;
     if (this.nonces.has(key)) return "replay";
     this.nonces.set(key, h.receivedAt.getTime());
+    if (this.lastDeviceTs.has(h.deviceId) && h.deviceTs.getTime() <= this.lastDeviceTs.get(h.deviceId)!) return "out_of_order";
     this.heartbeats.push(h);
-    Object.assign(d, { lastHeartbeatAt: h.receivedAt.toISOString(), mains: h.mains, powerSource: h.powerSource, batteryPct: h.batteryPct, clockSkewS: h.clockSkewS, selfTest: h.selfTest, networkHash: h.networkHash });
+    this.lastDeviceTs.set(h.deviceId, h.deviceTs.getTime());
+    Object.assign(d, { lastHeartbeatAt: new Date(Math.min(h.receivedAt.getTime(), h.deviceTs.getTime())).toISOString(), mains: h.mains, powerSource: h.powerSource, batteryPct: h.batteryPct, clockSkewS: h.clockSkewS, selfTest: h.selfTest, networkHash: h.networkHash });
     return "ok";
   }
   async listDevices() {

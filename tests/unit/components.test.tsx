@@ -169,3 +169,12 @@ describe("Qodo pass 4 on PR #5 — share text", () => {
     expect(t).not.toMatch(/0 neighbours/);
   });
 });
+
+describe("Qodo pass 5 on PR #5 — sensor labels", () => {
+  it("sensor evidence reads 'Measured · N sensors', never 'Official' or 'reports' (#2)", () => {
+    render(<EvidenceList now={NOW.getTime()} items={[ev({ sourceId: "light_dey_sensor", sourceName: "Light Dey sensors", evidenceType: "measured", tier: 1, role: "decisive", count: 2 })]} />);
+    expect(screen.getByText("Measured")).toBeInTheDocument();
+    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByText(/2 sensors/)).toBeInTheDocument();
+  });
+});

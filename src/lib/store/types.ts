@@ -104,7 +104,7 @@ export interface DataStore {
    * Atomically: per-device rate limit, nonce replay check, raw heartbeat insert and device
    * state update. Returns "ok", "replay" (nonce seen) or "rate_limited".
    */
-  recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited">;
+  recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited" | "out_of_order">;
   /** Every non-revoked device with its latest state (health is computed by the caller). */
   listDevices(): Promise<DeviceRow[]>;
   pruneSensorData(now: Date): Promise<{ nonces: number; heartbeats: number }>;

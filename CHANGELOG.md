@@ -28,6 +28,11 @@
 - Share text never upgrades reported → confirmed or estimate → live.
 
 ## [Unreleased] — ingestion (LD-041)
+### Fixed (Qodo pass 5)
+- Withdrawals use an explicit `withdrawn_at` (migration 20261114000100), so future-dated claims can always be withdrawn.
+- `--deactivate` revokes every key of the partner; re-approval needs `--reactivate` and old keys stay revoked.
+- `--revoke` withdraws only claims the key was the latest to write.
+- Partner key SQL lives in scripts/partner-ops.mjs and is tested against an empty Postgres (PGlite).
 ### Fixed (Qodo review of PR #3)
 - Recoveries clear outages immediately (newest reading supersedes; sequence test).
 - NIGGRID parser requires exactly one Total row matching the DisCo sum, and rejects duplicate rows.
