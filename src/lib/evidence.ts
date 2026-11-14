@@ -140,7 +140,7 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     summary,
     count: 1,
     observedAt: o.observedAt,
-    freshness: freshnessOf(ageMin(o.observedAt, now), STATUS_CONFIG),
+    freshness: freshnessOf(ageMin(o.observedAt, now), o.kind === "status_report" ? STATUS_CONFIG : { freshness: cfg.officialFreshness }),
     url: o.url,
   });
 
@@ -200,9 +200,10 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     const c = communityItem(communityConfirmed && communityConfirmed !== s ? "conflicting" : "supporting");
     if (c) evidence.push(c);
     const contradicted = communityConfirmed !== null && communityConfirmed !== s;
+    const oldReading = ageMin(official[0].observedAt, now) > cfg.officialHighConfidenceMaxMinutes;
     return finish(
       s === "on" ? "CONFIRMED_ON" : "CONFIRMED_OFF",
-      contradicted ? "medium" : "high",
+      contradicted ? (oldReading ? "low" : "medium") : oldReading ? "medium" : "high",
       contradicted
         ? `Official data says ${word(s)}, but neighbours report ${word(communityConfirmed!)} — some may be on generator/solar or a separate supply.`
         : `Official data: ${word(s)}.${s === "off" && official[0].scope !== "neighbourhood" ? " Applies to grid supply; private or embedded generation isn't covered." : ""}`,
@@ -280,21 +281,25 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
   return finish("UNKNOWN", community.recentReports > 0 ? "low" : "none", why);
 }
 
-/** Latest NISO figures for the Lagos DisCos + national total, or null if stale/missing. */
+/**
+ * Latest NISO figures for the Lagos DisCos + national total, or null if stale/missing.
+ * Uses exactly the same rules as the map (future readings dropped, newest per measure,
+ * outage derived from MW), so the grid card can never disagree with area statuses.
+ */
 export function gridContextFrom(observations: Observation[], now: Date = new Date(), cfg: Cfg = EVIDENCE_CONFIG): import("./types").GridContext | null {
   const t = now.getTime();
-  const fresh = observations.filter((o) => o.sourceId === "niso_niggrid" && (o.kind === "disco_allocation" || o.kind === "grid_total") && isActive(o, t, cfg));
+  const grid = observations.filter((o) => o.sourceId === "niso_niggrid" && (o.kind === "disco_allocation" || o.kind === "grid_total") && Date.parse(o.observedAt) <= t + 2 * MIN);
+  const fresh = latestPerMeasure(grid.map((o) => normalizeGrid(o, cfg))).filter((o) => isActive(o, t, cfg));
   if (!fresh.length) return null;
-  const latest = (pred: (o: Observation) => boolean) => fresh.filter(pred).sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))[0];
-  const total = latest((o) => o.kind === "grid_total");
+  const total = fresh.find((o) => o.kind === "grid_total");
   const discos = (Object.keys(DISCOS) as (keyof typeof DISCOS)[])
-    .map((id) => ({ id, o: latest((o) => o.kind === "disco_allocation" && o.scopeRef === id) }))
+    .map((id) => ({ id, o: fresh.find((o) => o.kind === "disco_allocation" && o.scopeRef === id) }))
     .filter((d) => d.o)
-    .map((d) => ({ id: d.id, name: DISCOS[d.id].name, mw: d.o!.valueNum ?? 0 }));
-  const asOf = [total, ...fresh].filter(Boolean).map((o) => o!.observedAt).sort().at(-1)!;
+    .map((d) => ({ id: d.id, name: DISCOS[d.id].name, mw: d.o!.valueNum ?? 0, asOf: d.o!.observedAt }));
   return {
-    asOf,
+    asOf: fresh.map((o) => o.observedAt).sort().at(-1)!,
     totalMw: total?.valueNum ?? null,
+    totalAsOf: total?.observedAt ?? null,
     discos,
     sourceUrl: getSource("niso_niggrid")?.url ?? "https://www.niggrid.org/",
     collapse: total?.status === "off",

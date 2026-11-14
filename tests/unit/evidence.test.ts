@@ -82,6 +82,14 @@ describe("official sources", () => {
     expect(resolve("ikeja", [], [collapse(60)]).mapState).toBe("CONFIRMED_OFF");
   });
 
+  it("a 75-minute-old official reading still decides, but at medium confidence and labelled ageing (Qodo re-review #2-3)", () => {
+    const s = resolve("ikeja", [], [collapse(75)]);
+    expect(s.mapState).toBe("CONFIRMED_OFF");
+    expect(s.confidence).toBe("medium");
+    expect(s.evidence?.[0].freshness).toBe("ageing");
+    expect(resolve("ikeja", [], [collapse(20)]).evidence?.[0].freshness).toBe("fresh");
+  });
+
   it("a newer positive reading supersedes an older outage immediately (Qodo #2-3, #3-1)", () => {
     expect(resolve("ajah", [], [disco("eko", 0, 30)]).mapState).toBe("CONFIRMED_OFF");
     const s = resolve("ajah", [], [disco("eko", 0, 30), disco("eko", 410, 5)]);
@@ -262,6 +270,28 @@ describe("Yaba scenario — no hard-coding, evidence decides", () => {
   });
   it("two verified Yaba reporters => CONFIRMED_OFF", () => {
     expect(resolve("yaba", [], [verified("vr:a", "yaba", "off"), verified("vr:b", "yaba", "off")]).mapState).toBe("CONFIRMED_OFF");
+  });
+});
+
+describe("gridContextFrom — same rules as the map (Qodo re-review #2-2, #4-4)", () => {
+  it("collapse comes from the MW value, not a stored flag, and matches the map", () => {
+    const flaggedNormal = obs({ kind: "grid_total", scope: "national", valueNum: 3100, status: "off" });
+    const unflaggedLow = obs({ kind: "grid_total", scope: "national", valueNum: 40, status: null });
+    expect(gridContextFrom([flaggedNormal], NOW)?.collapse).toBe(false);
+    expect(resolve("yaba", [], [flaggedNormal]).mapState).toBe("UNKNOWN");
+    expect(gridContextFrom([unflaggedLow], NOW)?.collapse).toBe(true);
+    expect(resolve("yaba", [], [unflaggedLow]).mapState).toBe("CONFIRMED_OFF");
+  });
+  it("uses the newest reading and ignores future-dated ones", () => {
+    const g = gridContextFrom([collapse(30), obs({ kind: "grid_total", scope: "national", valueNum: 3000, observedAt: iso(5) }), obs({ kind: "grid_total", scope: "national", valueNum: 10, observedAt: iso(-60) })], NOW);
+    expect(g?.totalMw).toBe(3000);
+    expect(g?.collapse).toBe(false);
+  });
+  it("carries each figure's own time (Qodo re-review #4-3)", () => {
+    const g = gridContextFrom([disco("eko", 482, 50), disco("ikeja", 493, 5), obs({ kind: "grid_total", scope: "national", valueNum: 3216, observedAt: iso(5) })], NOW);
+    expect(g?.discos.find((d) => d.id === "eko")?.asOf).toBe(iso(50));
+    expect(g?.totalAsOf).toBe(iso(5));
+    expect(g?.asOf).toBe(iso(5));
   });
 });
 
