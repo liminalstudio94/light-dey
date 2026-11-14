@@ -67,22 +67,26 @@ See `supabase/migrations/`. 13 tables: states, cities, local_government_areas, n
 ## Maps
 Leaflet + OpenStreetMap standard tiles (attribution shown). OSM's tile policy suits low traffic only; before launch at scale, switch to a provider with an SLA (MapTiler/Stadia/Mapbox) — LD-028.
 
-## Evidence
+## Evidence (engine v2)
 
-`src/lib/evidence.ts`, rules in `EVIDENCE_CONFIG` (`src/lib/config.ts`), sources in `src/lib/sources/registry.ts`. Full source notes: SOURCES.md.
+`src/lib/evidence.ts`; rules in `EVIDENCE_CONFIG` and `SENSOR_CONFIG` (`src/lib/config.ts`); sources in `src/lib/sources/registry.ts`; full notes in SOURCES.md and SENSORS.md.
 
 | Map state | Requires | Marker |
 |---|---|---|
-| `CONFIRMED_OFF` / `CONFIRMED_ON` | Official (tier 1): grid collapse, mapped DisCo ≤ 5 MW, or official partner; or 2 verified reporters (or 1 + community) | solid, dark ring |
-| `COMMUNITY_OFF` / `COMMUNITY_ON` | 3+ independent community reporters in 60 min (max 2 per network). A lone verified report stays `UNKNOWN` | solid |
-| `CONFLICTING` | Opposing official, verified, or community evidence | yellow |
-| `ESTIMATED_OFF` / `ESTIMATED_ON` | No fresh reports at all; ≥ 6 past confirmed hours at this hour, ≥ 70% one way | dashed hollow; legacy `state` stays `UNKNOWN` |
-| `UNKNOWN` | Nothing above; explanation says why | grey |
+| `CONFIRMED_ON/OFF` | **Strong**: fresh official status claim (grid collapse, mapped DisCo ≤ 5 MW, official DisCo partner) and/or a **healthy, fresh, grid-direct sensor**. Independent = official + sensor, or sensors on different networks ⇒ high confidence | solid, dark ring |
+| `LIKELY_ON/OFF` | Indirect: degraded/late sensor; sensor after a changeover reading *no* power; 2 verified reporters, or 1 + 3 neighbours | filled, dashed ring |
+| `COMMUNITY_ON/OFF` ("Reported") | 3+ independent neighbours (max 2 per network) in 60 min, or **1 fresh verified report** | plain |
+| `CONFLICTING` | Credible signals disagree at the highest level present | yellow |
+| `ESTIMATED_ON/OFF` | No fresh reports or sensor readings; ≥ 6 past confirmed hours at this hour, ≥ 70% one way, pattern ≤ 3 h old | hollow |
+| `UNKNOWN` ("Not enough current evidence") | Nothing above; reason stated; "Help confirm this area" | grey |
 
-Supersede: only the newest reading per source and measure (DisCo, national total, one partner's report for one area) is considered, so recoveries clear outages at once; future-dated readings are ignored. Grid outage status is derived from MW thresholds, not stored flags.
+Rules that matter:
+- **Newest reading per measure** supersedes older ones (recoveries clear outages at once); future-dated readings are ignored; grid outages are derived from MW, never stored flags.
+- **Sensor silence ≠ outage** (offline after 15 min). **Device power ≠ grid power** (`powerSource` is never grid evidence; `supplyPoint` separates grid-direct from after-changeover).
+- **Geography**: sensors and reports affect only their own neighbourhood; DisCo evidence only officially mapped areas; national figures all of Lagos; IODA Lagos-wide context only.
+- **Expiry**: official 90 min after "as at"; sensors strong ≤ 10 min, offline > 15 min; verified reports 60 min; community 60 min; notices 14 days (context).
+- Every item carries `evidenceType` (measured / official / reported / estimated / proxy), role, time, freshness, count and a trusted link; every status carries an `explanation`, sensor coverage and a timeline (`/api/areas/[id]/timeline` from `status_snapshots`).
 
-Expiry: official grid figures 90 min after their own "as at" (NISO publishes about hourly); partner reports 60 min; community 60 min; notices 14 days (context only). Observations with future timestamps are ignored. Every status carries `evidence[]` (source, tier, role, count, time, freshness, link) and an `explanation`.
+Tables: `sources`, `source_runs`, `observations`, `observation_neighbourhoods`, `disco_service_areas`, `verification_events`, `partner_keys`, `partner_key_writes`, `status_snapshots`, `hourly_patterns`, `devices`, `sensor_heartbeats`, `sensor_nonces`.
 
-**Not hard-coded:** no area has a fixed status. Yaba, for example, is unmapped to a DisCo, so only a national collapse, verified reporters or 3 independent neighbours can change it (see the Yaba tests in `tests/unit/evidence.test.ts`).
-
-Tables (migration `20261113010000_evidence.sql`): `sources`, `source_runs`, `observations`, `observation_neighbourhoods`, `disco_service_areas`, `verification_events`, `partner_keys`, `status_snapshots`, `hourly_patterns`.
+**Not hard-coded:** no area has a fixed status. Yaba is unmapped to a DisCo; a healthy Yaba sensor, a national collapse, verified reporters or 3 neighbours decide it (see the Yaba tests).

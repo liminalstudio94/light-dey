@@ -26,12 +26,12 @@ export function HomeLive({ initial }: { initial: Overview }) {
   const mc = data.mapCounts ?? ({} as Record<MapState, number>);
   const n = (m: MapState) => mc[m] ?? 0;
   // Conflicting areas have live evidence too — it just disagrees.
-  const confirmed = n("CONFIRMED_ON") + n("CONFIRMED_OFF") + n("COMMUNITY_ON") + n("COMMUNITY_OFF") + n("CONFLICTING");
+  const confirmed = n("CONFIRMED_ON") + n("CONFIRMED_OFF") + n("LIKELY_ON") + n("LIKELY_OFF") + n("COMMUNITY_ON") + n("COMMUNITY_OFF") + n("CONFLICTING");
   const tiles: { state: AreaState; label: string; total: number; detail: string }[] = [
-    { state: "LIGHT", label: "Light dey", total: n("CONFIRMED_ON") + n("COMMUNITY_ON"), detail: `${n("CONFIRMED_ON")} confirmed · ${n("COMMUNITY_ON")} reported` },
-    { state: "NO_LIGHT", label: "No light", total: n("CONFIRMED_OFF") + n("COMMUNITY_OFF"), detail: `${n("CONFIRMED_OFF")} confirmed · ${n("COMMUNITY_OFF")} reported` },
+    { state: "LIGHT", label: "Light dey", total: n("CONFIRMED_ON") + n("LIKELY_ON") + n("COMMUNITY_ON"), detail: `${n("CONFIRMED_ON")} confirmed · ${n("LIKELY_ON")} likely · ${n("COMMUNITY_ON")} reported` },
+    { state: "NO_LIGHT", label: "No light", total: n("CONFIRMED_OFF") + n("LIKELY_OFF") + n("COMMUNITY_OFF"), detail: `${n("CONFIRMED_OFF")} confirmed · ${n("LIKELY_OFF")} likely · ${n("COMMUNITY_OFF")} reported` },
     { state: "UNCERTAIN", label: "Conflicting", total: n("CONFLICTING"), detail: "sources disagree" },
-    { state: "UNKNOWN", label: "Unknown", total: n("UNKNOWN"), detail: n("ESTIMATED_ON") + n("ESTIMATED_OFF") ? `+ ${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} more with only a historical estimate` : "not enough verified data" },
+    { state: "UNKNOWN", label: "No current evidence", total: n("UNKNOWN"), detail: n("ESTIMATED_ON") + n("ESTIMATED_OFF") ? `+ ${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} more with only a historical prediction` : "help confirm these areas" },
   ];
 
   return (

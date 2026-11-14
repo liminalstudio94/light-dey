@@ -7,7 +7,7 @@ export function StatusDot({ state, live = false, className = "", mapState }: { s
   if (style === "hollow") return <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full border-2 border-dashed ${className}`} style={{ borderColor: m.hex }} aria-hidden />;
   return (
     <span
-      className={`relative inline-block h-2.5 w-2.5 shrink-0 rounded-full ${m.dot} ${m.text} ${style === "solid" && mapState ? "ring-2 ring-ink/70 ring-offset-1" : ""} ${live && (state === "LIGHT" || state === "NO_LIGHT") ? "live-dot" : ""} ${className}`}
+      className={`relative inline-block h-2.5 w-2.5 shrink-0 rounded-full ${m.dot} ${m.text} ${style === "solid" && mapState ? "ring-2 ring-ink/70 ring-offset-1" : ""} ${style === "likely" ? "outline-2 outline-dashed outline-offset-1 outline-ink/50" : ""} ${live && (state === "LIGHT" || state === "NO_LIGHT") ? "live-dot" : ""} ${className}`}
       aria-hidden
     />
   );

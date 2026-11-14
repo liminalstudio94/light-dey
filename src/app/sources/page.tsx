@@ -24,12 +24,13 @@ export default function SourcesPage() {
     <Prose title="Where our data comes from">
       <p>
         Light Dey? combines independent evidence and always shows which source each status comes from. We never present an estimate, a stale report or a single
-        unverified report as confirmed live electricity. When trustworthy data is missing, the area shows <strong>Unknown</strong>.
+        unverified report as confirmed live electricity. When trustworthy data is missing, the area shows <strong>Not enough current evidence</strong> and asks you to help confirm.
       </p>
       <h2>How evidence is ranked</h2>
       <ol className="ml-5 list-decimal space-y-1">
-        <li><strong>Official</strong> (grid operator, DisCos, approved operator partners) → “Confirmed”. Grid figures expire after {e.officialMaxAgeMinutes} minutes.</li>
-        <li><strong>Verified reporters</strong> → “Confirmed” when {e.verifiedConfirmCount} independent ones agree (or one plus neighbours).</li>
+        <li><strong>Measured</strong> (a healthy <a className="text-brand" href="/sensors">Light Dey sensor</a>) or <strong>official</strong> outage data → “Confirmed”. Grid figures expire after {e.officialMaxAgeMinutes} minutes.</li>
+        <li><strong>Indirect</strong> evidence (a degraded sensor, one behind a generator changeover, or {e.verifiedConfirmCount} verified reporters agreeing) → “Likely”.</li>
+        <li><strong>One verified reporter</strong> → “Reported” straight away.</li>
         <li><strong>Community</strong> → “Reported” when {STATUS_CONFIG.confirmationThreshold}+ independent people agree within {STATUS_CONFIG.reportingWindowMinutes} minutes.</li>
         <li><strong>Estimate</strong> → only with no live evidence, from ≥{e.estimate.minSamples} past confirmed hours at least {Math.round(e.estimate.minProbability * 100)}% one way.</li>
       </ol>

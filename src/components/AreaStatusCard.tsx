@@ -45,7 +45,7 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
         ) : unknown && status.leaning ? (
           `${status.leaning === "on" ? status.onReporters : status.offReporters} of ${STATUS_CONFIG.confirmationThreshold} needed say ${status.leaning === "on" ? "light dey" : "no light"}`
         ) : unknown ? (
-          "Not enough verified data — tap to report"
+          "Not enough current evidence — help confirm"
         ) : (
           `${CONFIDENCE_LABEL[status.confidence]} · ${FRESHNESS_LABEL[status.freshness]}`
         )}

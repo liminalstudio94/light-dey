@@ -20,6 +20,7 @@ export function SiteFooter() {
           <Link href="/map" className="hover:text-white">Live map</Link>
           <Link href="/report" className="hover:text-white">Report status</Link>
           <Link href="/sources" className="hover:text-white">Data sources</Link>
+          <Link href="/sensors" className="hover:text-white">Sensors</Link>
         </nav>
       </div>
       <div className="border-t border-white/10 py-4 text-center text-xs text-white/50">

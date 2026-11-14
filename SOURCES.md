@@ -3,21 +3,29 @@
 Source of truth: `src/lib/sources/registry.ts` (seeded into `lightdey.sources`). The public version is at `/sources`.
 Last verified: **2026-11-13**.
 
-## Summary
+## Summary (verified 2026-11-14)
 
-| Status | Source | Tier | What it may assert |
-|---|---|---|---|
-| ✅ **Live** | NISO Grid Data Portal — DisCo load profile | 1 official | **Outage only**: national grid collapse, or a mapped DisCo at ~0 MW |
-| ✅ **Live** | Ikeja Electric public notices (RSS) | 1 official | **Context only**: links notices that name an area |
-| ✅ **Live** | Light Dey? community reports | 3 community | "Reported" light / no light / conflicting |
-| ✅ **Live (derived)** | Historical pattern estimate | 4 estimate | "Estimate", only when there is no live evidence |
-| ⏳ Implemented, **awaiting partners** | Approved partner feeds (DisCo, estates, facilities) | 1 | "Confirmed" via `POST /api/ingest/observations` |
-| ⏳ Implemented, **awaiting partners** | Verified community reporters | 2 | "Confirmed" when 2 agree (or 1 + neighbours) |
-| 🔑 **Needs credentials** (not implemented) | DisCo / TCN / NISO posts on X | 1 | Would be context-only notices |
-| ❌ No accessible feed | Eko DisCo (EKEDP) notices | 1 | — |
-| ❌ Not live | NERC quarterly / energy-cap reports | 1 | — (possible feeder-mapping research) |
+| Source | Owner | Type | Status | What it may assert |
+|---|---|---|---|---|
+| NISO Grid Data Portal — DisCo load profile | NISO | official grid | ✅ **Live** | Outage only: national collapse, or a mapped DisCo at ~0 MW |
+| Ikeja Electric public notices (RSS) | Ikeja Electric | official DisCo | ✅ **Live** | Context only: links notices that name an area |
+| Light Dey community reports | public | reported | ✅ **Live** | Reported (3+ independent neighbours) |
+| Historical pattern | derived | estimate | ✅ **Live (derived)** | Labelled prediction only, never live |
+| Light Dey Sensor (protocol v1) | opt-in hosts | measured telemetry | 🔧 **Implemented — needs devices** | Confirmed / Likely from mains readings |
+| Verified reporters | vetted people | reported | 🔧 **Implemented — needs approvals** | 1 ⇒ Reported; 2 (or 1 + neighbours) ⇒ Likely |
+| Verified partners (shops, security desks, estates) | partners | reported | 🔧 **Implemented — needs partnerships** | as verified reporters |
+| Official DisCo partner feed | Eko / Ikeja | official | 🔧 **Implemented — needs partnership** | Confirmed |
+| IODA internet connectivity (Lagos State) | Georgia Tech | weak proxy | 🔧 **Implemented, OFF — awaiting permission** | Lagos-wide context only |
+| Victron VRM (inverters) | owners | device provider | 🔑 **Requires owner token + consent** (not implemented) | would be measured |
+| Shelly Cloud (smart plugs) | owners | device provider | 🔑 **Requires owner key + consent** (not implemented) | would be measured |
+| DisCo / TCN / NISO posts on X | official | official | 🔑 **Requires paid X API** (not implemented) | context only |
+| Eko DisCo website | Eko DisCo | official | ❌ **Rejected** — no feed (404) | — |
+| TCN website | TCN | official | ❌ **Rejected** — notices page is procurement PDFs | — |
+| NERC feed / reports | NERC | regulator | ❌ **Rejected for live use** — feed last post July 2025, PDFs only | — |
+| LASERC | Lagos regulator | regulator | ❌ **Rejected** — unreachable | — |
+| Downdetector, Google "popular times", road cameras, social posts | various | proxy | ❌ **Rejected** — terms forbid scraping / unverifiable / too coarse | — |
 
-**Only user/community-supplied:** neighbourhood-level "light dey" in every area. No public official source says that a particular neighbourhood *has* power right now. Grid data can only prove outages, because DisCos load-shed.
+**Only user/community-supplied today:** neighbourhood-level "light dey" in every area, until sensors are deployed. No accessible public source says a particular neighbourhood *has* power now; grid data can only prove outages.
 
 ## Live sources
 
@@ -42,6 +50,14 @@ Anonymous reports through `/api/reports`: zod validation, 10-minute duplicate wi
 
 ### Historical estimate
 Hour-of-day pattern from the last 30 days of confirmed community hours (`hourly_patterns`, recomputed hourly). Used only when an area has no live evidence, with ≥ 6 samples at ≥ 70% one way. Always labelled "Estimate … not live", drawn as a dashed hollow marker, never coloured as live.
+
+## Light Dey sensors
+
+See **SENSORS.md** for the protocol, security, privacy and setup. Status: implemented and tested end to end with the reference client; no devices deployed.
+
+## IODA (opt-in proxy)
+
+`https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?entityType=region&entityCode=2935` (Lagos State). Reachable without credentials (checked 2026-11-14), but responses state "All Rights Reserved" and no data-use terms are published, so the adapter stays **off** (`SOURCE_IODA_ENABLED=0`) until IODA grants permission (contact: data-info at CAIDA/Georgia Tech). When on, an ongoing Lagos-region event becomes Lagos-wide **context** — never a status: generators, inverters and mobile networks keep the internet up during grid outages.
 
 ## Waiting on credentials or approval
 

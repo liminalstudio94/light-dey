@@ -136,6 +136,8 @@ export function ReportPanel({ defaultAreaId, lockArea = false }: { defaultAreaId
         </button>
       </div>
 
+      <p className="mt-3 text-xs text-ink-2">Report <strong>grid (NEPA) power</strong> only — if you&rsquo;re on generator, inverter or solar and the grid is off, tap NO LIGHT.</p>
+
       {/* Honeypot: hidden from people and assistive tech; bots tend to fill it. */}
       <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
         <label>Website<input tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} /></label>
