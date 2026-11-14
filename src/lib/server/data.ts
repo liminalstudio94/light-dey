@@ -3,6 +3,7 @@ import { AREAS } from "../areas";
 import { gridContextFrom, lagosHour, resolveAreaStatus } from "../evidence";
 import { historyStats } from "../history";
 import { aggregateAll } from "../status";
+import { isSourceEnabled } from "../ingest/switches";
 import { getStore } from "../store";
 import type { AreaState, MapState, Overview } from "../types";
 
@@ -29,11 +30,13 @@ export async function evidenceOrEmpty<T>(p: Promise<T[]>, what: string): Promise
 
 export async function getOverview(now = new Date()): Promise<Overview> {
   const store = getStore();
-  const [reports, observations, patterns] = await Promise.all([
+  const [reports, stored, patterns] = await Promise.all([
     store.listReports({ since: new Date(now.getTime() - 24 * 3_600_000) }),
     evidenceOrEmpty(store.listObservations(now), "observations"),
     evidenceOrEmpty(store.listHourPatterns(lagosHour(now.getTime())), "hourly_patterns"),
   ]);
+  // A switched-off source stops counting immediately, not just when its readings expire.
+  const observations = stored.filter((o) => isSourceEnabled(o.sourceId));
   const patternByArea = new Map(patterns.map((p) => [p.areaId, p]));
   // Community-only status first (all 24h reports so staleness can be explained), then combine with other evidence.
   const statuses = aggregateAll(AREAS.map((a) => a.id), reports, now).map((community) =>

@@ -1,7 +1,7 @@
 import "server-only";
 import postgres from "postgres";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import type { DataStore, NewObservation, NewReport, RunResult, SnapshotRow } from "./types";
+import { ObservationScopeConflict, type DataStore, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow } from "./types";
 
 type Row = {
   id: string;
@@ -87,12 +87,12 @@ export class PostgresStore implements DataStore {
       with newest as (
         select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
         from lightdey.observations
-        where kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
+        where kind <> 'notice' and withdrawn_at is null and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
         order by source_id, kind, scope, coalesce(scope_ref, ''), observed_at desc
       ), picked as (
         select * from newest where valid_until >= ${now}
         union all
-        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
+        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice' and withdrawn_at is null
       )
       select o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until,
              s.trust_tier as tier, array_remove(array_agg(onb.neighbourhood_id), null) as areas
@@ -119,10 +119,11 @@ export class PostgresStore implements DataStore {
     }));
   }
 
-  async upsertObservations(rows: NewObservation[]): Promise<number> {
+  async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}): Promise<number> {
     let written = 0;
-    for (const r of rows) {
-      await this.sql.begin(async (tx) => {
+    // The whole batch is ONE transaction: if any row fails, nothing from this run becomes evidence.
+    await this.sql.begin(async (tx) => {
+      for (const r of rows) {
         // Every mutable column takes part in change detection, so corrections are never discarded.
         const changed = await tx<{ id: string }[]>`
           insert into lightdey.observations as o_old (source_id, external_id, scope, scope_ref, kind, status, value_num, title, url, observed_at, valid_until, payload)
@@ -131,11 +132,16 @@ export class PostgresStore implements DataStore {
             scope = excluded.scope, scope_ref = excluded.scope_ref, kind = excluded.kind, status = excluded.status, value_num = excluded.value_num,
             title = excluded.title, url = excluded.url, observed_at = excluded.observed_at, valid_until = excluded.valid_until,
             payload = excluded.payload, fetched_at = now()
-          where (o_old.scope, o_old.scope_ref, o_old.kind, o_old.status, o_old.value_num, o_old.title, o_old.url, o_old.observed_at, o_old.valid_until, o_old.payload)
+          where o_old.scope = excluded.scope and o_old.scope_ref is not distinct from excluded.scope_ref and o_old.kind = excluded.kind
+            and (o_old.scope, o_old.scope_ref, o_old.kind, o_old.status, o_old.value_num, o_old.title, o_old.url, o_old.observed_at, o_old.valid_until, o_old.payload)
                 is distinct from
                 (excluded.scope, excluded.scope_ref, excluded.kind, excluded.status, excluded.value_num, excluded.title, excluded.url, excluded.observed_at, excluded.valid_until, excluded.payload)
           returning id`;
-        const [{ id }] = changed.length ? changed : await tx<{ id: string }[]>`select id from lightdey.observations where source_id = ${r.sourceId} and external_id = ${r.externalId}`;
+        // An observation never moves to another scope/area; the conflict clause above refuses it atomically.
+        const [{ id, scope_ref }] = changed.length
+          ? [{ id: changed[0].id, scope_ref: r.scopeRef }]
+          : await tx<{ id: string; scope_ref: string | null }[]>`select id, scope_ref from lightdey.observations where source_id = ${r.sourceId} and external_id = ${r.externalId}`;
+        if (scope_ref !== r.scopeRef) throw new ObservationScopeConflict(scope_ref);
         // Always reconcile area links (including clearing them), and count a link change as a write.
         const current = (await tx<{ n: string }[]>`select neighbourhood_id as n from lightdey.observation_neighbourhoods where observation_id = ${id}`).map((x) => x.n).sort();
         const wanted = [...new Set(r.neighbourhoodIds)].sort();
@@ -144,19 +150,27 @@ export class PostgresStore implements DataStore {
           await tx`delete from lightdey.observation_neighbourhoods where observation_id = ${id}`;
           if (wanted.length) await tx`insert into lightdey.observation_neighbourhoods ${tx(wanted.map((n) => ({ observation_id: id, neighbourhood_id: n })))}`;
         }
-        if (changed.length || linksChanged) written++;
-      });
-    }
+        if (changed.length || linksChanged) {
+          written++;
+          if (opts.audit) await tx`insert into lightdey.verification_events (observation_id, event, actor) values (${id}, ${opts.audit.event}, ${opts.audit.actor})`;
+        }
+      }
+    });
     return written;
   }
 
-  async acquireLease(sourceId: string, minIntervalMinutes: number, now: Date): Promise<boolean> {
+  async acquireLease(sourceId: string, minIntervalMinutes: number, now: Date, opts: { force?: boolean; runningMinutes?: number } = {}): Promise<boolean> {
     const rows = await this.sql`
-      update lightdey.sources set last_attempt_at = ${now}
+      update lightdey.sources set last_attempt_at = ${now}, running_until = ${now}::timestamptz + make_interval(mins => ${opts.runningMinutes ?? 2})
       where id = ${sourceId} and is_active
-        and (last_attempt_at is null or last_attempt_at <= ${now}::timestamptz - make_interval(mins => ${minIntervalMinutes}))
+        and (running_until is null or running_until <= ${now})
+        and (${opts.force ?? false} or last_attempt_at is null or last_attempt_at <= ${now}::timestamptz - make_interval(mins => ${minIntervalMinutes}))
       returning id`;
     return rows.length === 1;
+  }
+
+  async releaseLease(sourceId: string): Promise<void> {
+    await this.sql`update lightdey.sources set running_until = null where id = ${sourceId}`;
   }
 
   async recordRun(sourceId: string, startedAt: Date, r: RunResult): Promise<void> {
@@ -188,15 +202,51 @@ export class PostgresStore implements DataStore {
     return new Map(rows.map((r) => [r.neighbourhood_id, r.map_state]));
   }
 
-  async insertSnapshots(rows: SnapshotRow[]): Promise<void> {
-    if (!rows.length) return;
-    await this.sql`insert into lightdey.status_snapshots ${this.sql(rows.map((r) => ({ neighbourhood_id: r.areaId, map_state: r.mapState, confidence: r.confidence, freshness: r.freshness, evidence: this.sql.json(r.evidence as postgres.JSONValue) })))}`;
+  async recordSnapshotChanges(rows: SnapshotRow[]): Promise<number> {
+    if (!rows.length) return 0;
+    // One transaction under an advisory lock: concurrent refreshes can't both see the old state and insert duplicates.
+    return this.sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext('lightdey:status_snapshots'))`;
+      const prev = new Map(
+        (await tx<{ neighbourhood_id: string; map_state: string }[]>`
+          select distinct on (neighbourhood_id) neighbourhood_id, map_state from lightdey.status_snapshots order by neighbourhood_id, computed_at desc`).map((r) => [r.neighbourhood_id, r.map_state]),
+      );
+      const changed = rows.filter((r) => prev.get(r.areaId) !== r.mapState);
+      if (changed.length)
+        await tx`insert into lightdey.status_snapshots ${tx(changed.map((r) => ({ neighbourhood_id: r.areaId, map_state: r.mapState, confidence: r.confidence, freshness: r.freshness, evidence: tx.json(r.evidence as postgres.JSONValue) })))}`;
+      return changed.length;
+    });
   }
 
-  async findPartnerKey(keyHash: string) {
-    const rows = await this.sql<{ source_id: string; trust_tier: number }[]>`
-      select k.source_id, s.trust_tier from lightdey.partner_keys k join lightdey.sources s on s.id = k.source_id
+  async findPartnerKey(keyHash: string): Promise<PartnerKey | null> {
+    const rows = await this.sql<{ id: string; source_id: string; trust_tier: number; allowed_neighbourhoods: string[] }[]>`
+      select k.id, k.source_id, s.trust_tier, k.allowed_neighbourhoods from lightdey.partner_keys k join lightdey.sources s on s.id = k.source_id
       where k.key_hash = ${keyHash} and k.revoked_at is null and s.is_active`;
-    return rows.length ? { sourceId: rows[0].source_id, tier: rows[0].trust_tier as 1 | 2 | 3 | 4 } : null;
+    return rows.length ? { keyId: rows[0].id, sourceId: rows[0].source_id, tier: rows[0].trust_tier as PartnerKey["tier"], allowedAreas: rows[0].allowed_neighbourhoods } : null;
+  }
+
+  async consumePartnerQuota(keyId: string, limit: number, now: Date): Promise<boolean> {
+    // Serialised per key, so simultaneous requests can't both pass the check.
+    return this.sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext(${"lightdey:partner:" + keyId}))`;
+      const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from lightdey.partner_key_writes where key_id = ${keyId} and written_at > ${now}::timestamptz - interval '1 hour'`;
+      // Only the last hour matters: prune this key's older rows so the log stays bounded.
+      await tx`delete from lightdey.partner_key_writes where key_id = ${keyId} and written_at <= ${now}::timestamptz - interval '1 hour'`;
+      if (n >= limit) return false;
+      await tx`insert into lightdey.partner_key_writes (key_id, written_at) values (${keyId}, ${now})`;
+      return true;
+    });
+  }
+
+  async observationScope(sourceId: string, externalId: string): Promise<string | null | undefined> {
+    const rows = await this.sql<{ scope_ref: string | null }[]>`select scope_ref from lightdey.observations where source_id = ${sourceId} and external_id = ${externalId}`;
+    return rows.length ? rows[0].scope_ref : undefined;
+  }
+
+  async recordVerificationEvent(e: { observationExternalId?: string; sourceId?: string; event: string; actor: string; note?: string }): Promise<void> {
+    await this.sql`
+      insert into lightdey.verification_events (observation_id, event, actor, note)
+      select o.id, ${e.event}, ${e.actor}, ${e.note ?? null} from lightdey.observations o
+      where o.source_id = ${e.sourceId ?? ""} and o.external_id = ${e.observationExternalId ?? ""}`;
   }
 }

@@ -1,0 +1,29 @@
+name: Refresh electricity sources
+# Vercel Hobby crons run at most daily, so this schedules the 10-minute refresh.
+# Needs repo secrets LIGHTDEY_URL (e.g. https://light-dey-pink.vercel.app) and CRON_SECRET.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: refresh-sources
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call refresh endpoint
+        env:
+          URL: ${{ secrets.LIGHTDEY_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o out.json -w '%{http_code}' --max-time 90 --retry 2 --retry-delay 10 \
+            -H "Authorization: Bearer ${CRON_SECRET}" "${URL}/api/cron/refresh")
+          jq -c '{at, errors, runs: [.runs[] | {sourceId, status, itemsWritten, error}], snapshots, mapCounts}' out.json || cat out.json
+          test "$code" = "200"
+          # Any failed source or pattern job makes the run red ("skipped" = not due, which is fine).
+          errors=$(jq '.errors // 0' out.json)
+          if [ "$errors" -gt 0 ]; then echo "::error::$errors refresh step(s) failed"; exit 1; fi

@@ -1,0 +1,21 @@
+# Qodo (PR-Agent) configuration. Engineering rules live in AGENTS.md.
+[config]
+ignore_pr_title = []
+
+[pr_reviewer]
+require_tests_review = true
+require_security_review = true
+require_estimate_effort_to_review = true
+extra_instructions = """
+Review against AGENTS.md. Light Dey? must never present estimates, stale reports or a single
+unverified report as confirmed live electricity. Flag: hardcoded thresholds outside src/lib/config.ts,
+any source used without an entry in src/lib/sources/registry.ts, DisCo mappings without an official
+citation, DB objects outside the `lightdey` schema, secrets reachable from client components, and
+ingestion code that could write data after a parse failure.
+"""
+
+[pr_description]
+extra_instructions = "Follow .github/pull_request_template.md. List which data sources the change touches and their trust tier."
+
+[pr_code_suggestions]
+extra_instructions = "Prefer small, testable pure functions in src/lib. Every business rule needs a unit test."
