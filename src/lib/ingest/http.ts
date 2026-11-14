@@ -4,16 +4,31 @@ export const USER_AGENT = `LightDey/1.0 (+${process.env.NEXT_PUBLIC_SITE_URL ?? 
 export type Fetcher = (url: string) => Promise<{ status: number; text: string }>;
 
 export const defaultFetcher: Fetcher = async (url) => {
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/rss+xml,application/xml;q=0.9" }, signal: AbortSignal.timeout(12_000), cache: "no-store" });
+  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html,application/rss+xml,application/xml;q=0.9" }, signal: AbortSignal.timeout(8_000), cache: "no-store" });
   return { status: res.status, text: await res.text() };
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** GET with retries (exponential backoff) on network errors, 429 and 5xx. 4xx other than 429 fail immediately. */
-export async function fetchWithRetry(fetcher: Fetcher, url: string, log: string[], attempts = 3, baseDelayMs = 1_000): Promise<{ text: string; attempts: number }> {
+/**
+ * GET with retries (exponential backoff) on network errors, 429 and 5xx; other 4xx fail immediately.
+ * `deadline` (epoch ms) bounds the whole call, so slow sources can't push a refresh past the function limit.
+ */
+export async function fetchWithRetry(
+  fetcher: Fetcher,
+  url: string,
+  log: string[],
+  { attempts = 3, baseDelayMs = 1_000, deadline = Infinity }: { attempts?: number; baseDelayMs?: number; deadline?: number } = {},
+): Promise<{ text: string; attempts: number }> {
   let lastErr = "";
-  for (let i = 1; i <= attempts; i++) {
+  let i = 0;
+  while (i < attempts) {
+    if (Date.now() >= deadline) {
+      lastErr ||= "deadline reached";
+      log.push(`GET ${url}: deadline reached before attempt ${i + 1}`);
+      break;
+    }
+    i++;
     try {
       const r = await fetcher(url);
       if (r.status >= 200 && r.status < 300) {
@@ -27,9 +42,11 @@ export async function fetchWithRetry(fetcher: Fetcher, url: string, log: string[
       lastErr = e instanceof Error ? e.message : String(e);
       log.push(`GET ${url} failed: ${lastErr} (attempt ${i})`);
     }
-    if (i < attempts) await sleep(baseDelayMs * 2 ** (i - 1));
+    const delay = baseDelayMs * 2 ** (i - 1);
+    if (i < attempts && Date.now() + delay < deadline) await sleep(delay);
+    else if (i < attempts) break;
   }
-  throw new RetryError(`${url}: ${lastErr}`, attempts);
+  throw new RetryError(`${url}: ${lastErr}`, Math.max(i, 1));
 }
 
 export class RetryError extends Error {

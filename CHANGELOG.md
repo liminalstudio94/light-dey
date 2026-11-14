@@ -1,6 +1,15 @@
 # Changelog
 
 ## [Unreleased] — ingestion (LD-041)
+### Fixed (Qodo review of PR #3)
+- Recoveries clear outages immediately (newest reading supersedes; sequence test).
+- NIGGRID parser requires exactly one Total row matching the DisCo sum, and rejects duplicate rows.
+- RSS parser rejects truncated/malformed feeds; ambiguous shared aliases (e.g. "lekki") no longer link areas.
+- Partner keys: per-key approved areas (403 outside), externalId bound to its first area (409), atomic per-key hourly quota (`partner_key_writes`).
+- Source runs hold an in-progress lock even when forced; adapters run in parallel with an overall deadline.
+- Snapshots are compared and inserted atomically; the opportunistic refresh skips overview/snapshots unless a source ran.
+- The scheduled workflow fails when any source errors.
+- Migration `20261114000000_ingestion_controls.sql`.
 ### Added
 - Adapters for the two verified public sources: NISO NIGGRID DisCo load profile (10 min) and Ikeja Electric notices RSS (hourly), with strict parsers that fail closed.
 - Job runner: per-source leases (rate limit), retries with backoff, run logs in `source_runs`, kill switches, idempotent upserts.

@@ -1,7 +1,7 @@
 import "server-only";
 import postgres from "postgres";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import type { DataStore, NewObservation, NewReport, RunResult, SnapshotRow } from "./types";
+import type { DataStore, NewObservation, NewReport, PartnerKey, RunResult, SnapshotRow } from "./types";
 
 type Row = {
   id: string;
@@ -148,13 +148,18 @@ export class PostgresStore implements DataStore {
     return written;
   }
 
-  async acquireLease(sourceId: string, minIntervalMinutes: number, now: Date): Promise<boolean> {
+  async acquireLease(sourceId: string, minIntervalMinutes: number, now: Date, opts: { force?: boolean; runningMinutes?: number } = {}): Promise<boolean> {
     const rows = await this.sql`
-      update lightdey.sources set last_attempt_at = ${now}
+      update lightdey.sources set last_attempt_at = ${now}, running_until = ${now}::timestamptz + make_interval(mins => ${opts.runningMinutes ?? 2})
       where id = ${sourceId} and is_active
-        and (last_attempt_at is null or last_attempt_at <= ${now}::timestamptz - make_interval(mins => ${minIntervalMinutes}))
+        and (running_until is null or running_until <= ${now})
+        and (${opts.force ?? false} or last_attempt_at is null or last_attempt_at <= ${now}::timestamptz - make_interval(mins => ${minIntervalMinutes}))
       returning id`;
     return rows.length === 1;
+  }
+
+  async releaseLease(sourceId: string): Promise<void> {
+    await this.sql`update lightdey.sources set running_until = null where id = ${sourceId}`;
   }
 
   async recordRun(sourceId: string, startedAt: Date, r: RunResult): Promise<void> {
@@ -186,21 +191,43 @@ export class PostgresStore implements DataStore {
     return new Map(rows.map((r) => [r.neighbourhood_id, r.map_state]));
   }
 
-  async insertSnapshots(rows: SnapshotRow[]): Promise<void> {
-    if (!rows.length) return;
-    await this.sql`insert into lightdey.status_snapshots ${this.sql(rows.map((r) => ({ neighbourhood_id: r.areaId, map_state: r.mapState, confidence: r.confidence, freshness: r.freshness, evidence: this.sql.json(r.evidence as postgres.JSONValue) })))}`;
+  async recordSnapshotChanges(rows: SnapshotRow[]): Promise<number> {
+    if (!rows.length) return 0;
+    // One transaction under an advisory lock: concurrent refreshes can't both see the old state and insert duplicates.
+    return this.sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext('lightdey:status_snapshots'))`;
+      const prev = new Map(
+        (await tx<{ neighbourhood_id: string; map_state: string }[]>`
+          select distinct on (neighbourhood_id) neighbourhood_id, map_state from lightdey.status_snapshots order by neighbourhood_id, computed_at desc`).map((r) => [r.neighbourhood_id, r.map_state]),
+      );
+      const changed = rows.filter((r) => prev.get(r.areaId) !== r.mapState);
+      if (changed.length)
+        await tx`insert into lightdey.status_snapshots ${tx(changed.map((r) => ({ neighbourhood_id: r.areaId, map_state: r.mapState, confidence: r.confidence, freshness: r.freshness, evidence: tx.json(r.evidence as postgres.JSONValue) })))}`;
+      return changed.length;
+    });
   }
 
-  async findPartnerKey(keyHash: string) {
-    const rows = await this.sql<{ source_id: string; trust_tier: number }[]>`
-      select k.source_id, s.trust_tier from lightdey.partner_keys k join lightdey.sources s on s.id = k.source_id
+  async findPartnerKey(keyHash: string): Promise<PartnerKey | null> {
+    const rows = await this.sql<{ id: string; source_id: string; trust_tier: number; allowed_neighbourhoods: string[] }[]>`
+      select k.id, k.source_id, s.trust_tier, k.allowed_neighbourhoods from lightdey.partner_keys k join lightdey.sources s on s.id = k.source_id
       where k.key_hash = ${keyHash} and k.revoked_at is null and s.is_active`;
-    return rows.length ? { sourceId: rows[0].source_id, tier: rows[0].trust_tier as 1 | 2 | 3 | 4 } : null;
+    return rows.length ? { keyId: rows[0].id, sourceId: rows[0].source_id, tier: rows[0].trust_tier as PartnerKey["tier"], allowedAreas: rows[0].allowed_neighbourhoods } : null;
   }
 
-  async countObservationsSince(sourceId: string, since: Date): Promise<number> {
-    const [{ n }] = await this.sql<{ n: number }[]>`select count(*)::int as n from lightdey.observations where source_id = ${sourceId} and fetched_at >= ${since}`;
-    return n;
+  async consumePartnerQuota(keyId: string, limit: number, now: Date): Promise<boolean> {
+    // Serialised per key, so simultaneous requests can't both pass the check.
+    return this.sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext(${"lightdey:partner:" + keyId}))`;
+      const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from lightdey.partner_key_writes where key_id = ${keyId} and written_at > ${now}::timestamptz - interval '1 hour'`;
+      if (n >= limit) return false;
+      await tx`insert into lightdey.partner_key_writes (key_id, written_at) values (${keyId}, ${now})`;
+      return true;
+    });
+  }
+
+  async observationScope(sourceId: string, externalId: string): Promise<string | null | undefined> {
+    const rows = await this.sql<{ scope_ref: string | null }[]>`select scope_ref from lightdey.observations where source_id = ${sourceId} and external_id = ${externalId}`;
+    return rows.length ? rows[0].scope_ref : undefined;
   }
 
   async recordVerificationEvent(e: { observationExternalId?: string; sourceId?: string; event: string; actor: string; note?: string }): Promise<void> {

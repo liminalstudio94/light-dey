@@ -41,6 +41,7 @@ export function parseDiscoLoadProfile(html: string, now: Date = new Date()): Dis
     const mw = Number(cells[1].replace(/,/g, ""));
     if (!cells[0] || !Number.isFinite(mw) || mw < 0 || mw > 50_000) throw new Error(`NIGGRID: bad row '${cells.join(" | ")}'`);
     if (/^total/i.test(cells[0])) {
+      if (pageTotal !== null) throw new Error("NIGGRID: more than one Total row");
       pageTotal = mw; // footer row, not a DisCo
       continue;
     }
@@ -49,9 +50,13 @@ export function parseDiscoLoadProfile(html: string, now: Date = new Date()): Dis
   }
   for (const d of Object.values(DISCOS)) if (!rows.some((r) => r.name === d.niggridName)) throw new Error(`NIGGRID: '${d.niggridName}' row missing`);
   if (rows.length < 8) throw new Error(`NIGGRID: only ${rows.length} DisCo rows`);
+  // The page's own Total is our integrity check: without it a truncated table can't be detected.
+  if (pageTotal === null) throw new Error("NIGGRID: Total row missing");
   const sum = Math.round(rows.reduce((a, r) => a + r.mw, 0) * 100) / 100;
-  if (pageTotal !== null && Math.abs(pageTotal - sum) > 1) throw new Error(`NIGGRID: rows sum to ${sum} MW but page total is ${pageTotal} MW`);
-  return { asOf, rows, totalMw: pageTotal ?? sum };
+  if (Math.abs(pageTotal - sum) > 1) throw new Error(`NIGGRID: rows sum to ${sum} MW but page total is ${pageTotal} MW`);
+  const names = rows.map((r) => r.name.toLowerCase());
+  if (new Set(names).size !== names.length) throw new Error("NIGGRID: duplicate DisCo rows");
+  return { asOf, rows, totalMw: pageTotal };
 }
 
 export function niggridObservations(p: DiscoLoadProfile, cfg = EVIDENCE_CONFIG): NewObservation[] {
