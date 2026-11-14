@@ -57,20 +57,25 @@ export class MemoryStore implements DataStore {
   }
   async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}) {
     let n = 0;
+    // Atomic like the Postgres transaction: work on a copy, commit only if every row succeeds.
+    const work = [...this.observations];
+    const events: { event: string; actor: string }[] = [];
     for (const r of rows) {
-      const i = this.observations.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
-      if (i >= 0 && (this.observations[i].scope !== r.scope || this.observations[i].scopeRef !== r.scopeRef)) throw new ObservationScopeConflict(this.observations[i].scopeRef);
+      const i = work.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
+      if (i >= 0 && (work[i].scope !== r.scope || work[i].scopeRef !== r.scopeRef)) throw new ObservationScopeConflict(work[i].scopeRef);
       const tier = this.partnerTier(r.sourceId) ?? getSource(r.sourceId)?.tier ?? 3;
       const { payload: _payload, ...rest } = r;
       void _payload;
-      const row: Observation = { ...rest, id: i >= 0 ? this.observations[i].id : randomUUID(), tier };
+      const row: Observation = { ...rest, id: i >= 0 ? work[i].id : randomUUID(), tier };
       if (i >= 0) {
-        if (JSON.stringify({ ...this.observations[i], id: "" }) === JSON.stringify({ ...row, id: "" })) continue;
-        this.observations[i] = row;
-      } else this.observations.push(row);
+        if (JSON.stringify({ ...work[i], id: "" }) === JSON.stringify({ ...row, id: "" })) continue;
+        work[i] = row;
+      } else work.push(row);
       n++;
-      if (opts.audit) this.events.push({ event: opts.audit.event, actor: opts.audit.actor });
+      if (opts.audit) events.push({ event: opts.audit.event, actor: opts.audit.actor });
     }
+    this.observations = work;
+    this.events.push(...events);
     return n;
   }
   private partnerTier(sourceId: string) {

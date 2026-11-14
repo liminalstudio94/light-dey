@@ -121,8 +121,9 @@ export class PostgresStore implements DataStore {
 
   async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}): Promise<number> {
     let written = 0;
-    for (const r of rows) {
-      await this.sql.begin(async (tx) => {
+    // The whole batch is ONE transaction: if any row fails, nothing from this run becomes evidence.
+    await this.sql.begin(async (tx) => {
+      for (const r of rows) {
         // Every mutable column takes part in change detection, so corrections are never discarded.
         const changed = await tx<{ id: string }[]>`
           insert into lightdey.observations as o_old (source_id, external_id, scope, scope_ref, kind, status, value_num, title, url, observed_at, valid_until, payload)
@@ -153,8 +154,8 @@ export class PostgresStore implements DataStore {
           written++;
           if (opts.audit) await tx`insert into lightdey.verification_events (observation_id, event, actor) values (${id}, ${opts.audit.event}, ${opts.audit.actor})`;
         }
-      });
-    }
+      }
+    });
     return written;
   }
 

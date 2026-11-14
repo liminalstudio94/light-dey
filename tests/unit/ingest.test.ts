@@ -366,3 +366,31 @@ describe("cron endpoint", () => {
     expect((await cron(new NextRequest("http://localhost/api/cron/refresh", { headers: { authorization: "Bearer " } }))).status).toBe(401);
   });
 });
+
+describe("Qodo pass 4 on PR #3", () => {
+  it("a failed batch writes nothing — no partial evidence from a failed run (#1)", async () => {
+    const store = new MemoryStore();
+    const now = Date.now();
+    const row = (externalId: string, scopeRef: string) => ({ sourceId: "niso_niggrid", externalId, scope: "disco" as const, scopeRef, kind: "disco_allocation" as const, status: "off" as const, valueNum: 0, title: null, url: null, observedAt: new Date(now).toISOString(), validUntil: new Date(now + 3_600_000).toISOString(), neighbourhoodIds: [] });
+    await store.upsertObservations([row("existing", "eko")]);
+    // second row tries to move "existing" to another scope => whole batch must roll back
+    await expect(store.upsertObservations([row("fresh", "eko"), row("existing", "ikeja")])).rejects.toThrow();
+    expect(store.observations.map((o) => o.externalId)).toEqual(["existing"]);
+  });
+
+  it("patterns are built per area, and an area whose history hit the cap is skipped, not estimated (#2)", async () => {
+    const { recomputePatterns, REPORT_QUERY_CAP } = await import("@/lib/ingest/runner");
+    const store = new MemoryStore();
+    const calls: (string | undefined)[] = [];
+    const now = new Date();
+    store.listReports = async ({ areaId }) => {
+      calls.push(areaId);
+      if (areaId === "yaba") return Array.from({ length: REPORT_QUERY_CAP }, (_, i) => ({ id: `r${i}`, areaId: "yaba", status: "on" as const, reporterId: `u${i}`, networkHash: `n${i}`, createdAt: new Date(now.getTime() - 3_600_000).toISOString(), verification: "unverified" as const }));
+      return [];
+    };
+    const n = await recomputePatterns(store, now);
+    expect(calls.every((c) => typeof c === "string")).toBe(true); // never one unbounded all-area query
+    expect(calls).toHaveLength(41);
+    expect(n).toBe(0); // the capped area produced no pattern
+  });
+});
