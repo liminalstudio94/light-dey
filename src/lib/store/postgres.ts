@@ -176,9 +176,9 @@ export class PostgresStore implements DataStore {
   }
 
   async listHourPatterns(hour: number): Promise<HourPattern[]> {
-    const rows = await this.sql<{ neighbourhood_id: string; hour: number; light_hours: number; known_hours: number }[]>`
-      select neighbourhood_id, hour, light_hours, known_hours from lightdey.hourly_patterns where hour = ${hour}`;
-    return rows.map((r) => ({ areaId: r.neighbourhood_id, hour: r.hour, lightHours: r.light_hours, knownHours: r.known_hours }));
+    const rows = await this.sql<{ neighbourhood_id: string; hour: number; light_hours: number; known_hours: number; computed_at: Date }[]>`
+      select neighbourhood_id, hour, light_hours, known_hours, computed_at from lightdey.hourly_patterns where hour = ${hour}`;
+    return rows.map((r) => ({ areaId: r.neighbourhood_id, hour: r.hour, lightHours: r.light_hours, knownHours: r.known_hours, computedAt: r.computed_at.toISOString() }));
   }
 
   async replaceHourPatterns(rows: HourPattern[], windowDays: number): Promise<void> {
