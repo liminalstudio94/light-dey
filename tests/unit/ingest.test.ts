@@ -22,6 +22,9 @@ const ok = (text: string): Fetcher => async () => ({ status: 200, text });
 describe("NIGGRID parser (real page fixture)", () => {
   it("reads the timestamp in Lagos time and every DisCo row", () => {
     expect(parseLagosDateTime("13/11/2026 20:07:00")).toBe("2026-11-13T19:07:00.000Z");
+    // Qodo re-review #3-5: impossible dates/times are rejected, not rolled over.
+    for (const bad of ["31/02/2026 10:00:00", "00/11/2026 10:00:00", "13/13/2026 10:00:00", "13/11/2026 24:00:00", "13/11/2026 20:60:00", "13/11/2026 20:07:61"]) expect(parseLagosDateTime(bad), bad).toBeNull();
+    expect(() => parseDiscoLoadProfile(NIGGRID.replace("13/11/2026", "31/02/2026"), AT)).toThrow(/unparseable/);
     const p = parseDiscoLoadProfile(NIGGRID, AT);
     expect(p.asOf).toBe("2026-11-13T19:07:00.000Z");
     expect(p.rows.find((r) => r.name === "Eko Disco")?.mw).toBe(482);
@@ -61,7 +64,10 @@ describe("Ikeja Electric notices (real feed fixture)", () => {
     const items = parseRss(FEED);
     expect(items).toHaveLength(5);
     const shomolu = items.find((i) => /Shomolu/.test(i.title + i.text))!;
-    expect(areasMentioned(shomolu.title + " " + shomolu.text)).toContain("shomolu");
+    // Qodo re-review #3-3: the publisher's name isn't a mention of the Ikeja neighbourhood.
+    expect(areasMentioned(shomolu.title + " " + shomolu.text)).toEqual(["shomolu"]);
+    expect(areasMentioned("Ikeja Electric Plc announces works")).toEqual([]);
+    expect(areasMentioned("Ikeja Electric announces works in Ikeja GRA and Ikeja")).toEqual(["ikeja", "ikeja-gra"]);
     expect(areasMentioned("Victoria Garden City")).toEqual([]); // no 'vi' alias false positive
     expect(areasMentioned("Outage in Lekki this weekend")).toEqual([]); // Qodo #3-6: 'lekki' is shared by two areas
     expect(areasMentioned("Outage in Lekki Phase 1")).toEqual(["lekki-phase-1"]);
@@ -248,6 +254,68 @@ describe("refresh orchestration", () => {
       delete process.env.SOURCE_NISO_ENABLED;
       delete process.env.SOURCE_IKEJA_NOTICES_ENABLED;
     }
+  });
+});
+
+describe("Qodo re-review on PR #3", () => {
+  const g = globalThis as unknown as { __lightDeyStore?: MemoryStore };
+
+  it("a kill switch removes that source's stored evidence from reads immediately (#1)", async () => {
+    const store = new MemoryStore();
+    g.__lightDeyStore = store;
+    const { getOverview } = await import("@/lib/server/data");
+    const now = Date.now();
+    await store.upsertObservations([{ sourceId: "niso_niggrid", externalId: "d", scope: "disco", scopeRef: "eko", kind: "disco_allocation", status: "off", valueNum: 0, title: null, url: null, observedAt: new Date(now - 60_000).toISOString(), validUntil: new Date(now + 3_600_000).toISOString(), neighbourhoodIds: [] }]);
+    const ajah = async () => (await getOverview(new Date())).statuses.find((s) => s.areaId === "ajah")!.mapState;
+    expect(await ajah()).toBe("CONFIRMED_OFF");
+    process.env.SOURCE_NISO_ENABLED = "0";
+    try {
+      expect(await ajah()).toBe("UNKNOWN");
+    } finally {
+      delete process.env.SOURCE_NISO_ENABLED;
+    }
+  });
+
+  it("concurrent submissions with one externalId can't move a claim to another area (#2)", async () => {
+    const store = new MemoryStore();
+    const KEY = "ldp_concurrent_key_0123456789abcdef";
+    store.partnerKeys.set(hashKey(KEY), { keyId: "kc", sourceId: "partner:estate", tier: 1, allowedAreas: ["yaba", "surulere"] });
+    g.__lightDeyStore = store;
+    const req = (area: string) =>
+      ingest(new NextRequest("http://localhost/api/ingest/observations", { method: "POST", body: JSON.stringify({ neighbourhoodId: area, status: "off", observedAt: new Date(Date.now() - 60_000).toISOString(), externalId: "same" }), headers: { "content-type": "application/json", authorization: `Bearer ${KEY}` } }));
+    const [a, b] = await Promise.all([req("yaba"), req("surulere")]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(store.observations).toHaveLength(1);
+    const first = a.status === 201 ? "yaba" : "surulere";
+    expect(store.observations[0].scopeRef).toBe(first);
+  });
+
+  it("a failed pattern job is reported as an error (#4)", async () => {
+    const store = new MemoryStore();
+    store.replaceHourPatterns = async () => {
+      throw new Error("db down");
+    };
+    g.__lightDeyStore = store;
+    process.env.SOURCE_NISO_ENABLED = "0";
+    process.env.SOURCE_IKEJA_NOTICES_ENABLED = "0";
+    try {
+      const r = await refreshDueSources({ snapshot: "always" });
+      expect(r.patterns).toBe("error");
+      expect(r.errors).toBe(1);
+    } finally {
+      delete process.env.SOURCE_NISO_ENABLED;
+      delete process.env.SOURCE_IKEJA_NOTICES_ENABLED;
+    }
+  });
+
+  it("key issuing derives trust tier from the id/kind; a verified reporter can't get tier 1 (#6)", async () => {
+    const { validateSourceSpec } = await import("../../scripts/partner-key-rules.mjs");
+    expect(validateSourceSpec({ id: "verified:ada-yaba", kind: "verified_reporter" })).toEqual({ tier: 2 });
+    expect(validateSourceSpec({ id: "partner:acme-estate", kind: "verified_partner" })).toEqual({ tier: 1 });
+    expect(() => validateSourceSpec({ id: "verified:ada-yaba", kind: "verified_reporter", tier: "1" })).toThrow(/always tier 2/);
+    expect(() => validateSourceSpec({ id: "verified:ada-yaba", kind: "verified_partner" })).toThrow(/verified_reporter/);
+    expect(() => validateSourceSpec({ id: "partner:acme", kind: "verified_reporter" })).toThrow(/verified_partner or official_disco/);
+    expect(() => validateSourceSpec({ id: "verified_reporters", kind: "verified_reporter" })).toThrow(/--id/);
   });
 });
 

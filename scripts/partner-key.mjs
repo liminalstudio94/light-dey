@@ -1,13 +1,15 @@
 // Approves a partner or verified reporter and issues an API key (shown ONCE).
 // Usage:
 //   node --env-file=.env.local scripts/partner-key.mjs --id partner:acme-estate --name "Acme Estate facilities" \
-//     --kind verified_partner --tier 1 --coverage "Acme Estate, Lekki Phase 1" --areas lekki-phase-1
+//     --kind verified_partner --coverage "Acme Estate, Lekki Phase 1" --areas lekki-phase-1
+//   Tier is derived: partner:* => 1, verified:* => 2 (--tier, if given, must match).
 //   A verified reporter is ONE person = one source (verified:<slug>) with one active key,
 //   so independent reporters are counted separately and a person can't count twice.
 //   node --env-file=.env.local scripts/partner-key.mjs --revoke <key-id>
 import { createHash, randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import postgres from "postgres";
+import { validateSourceSpec } from "./partner-key-rules.mjs";
 
 const { values: a } = parseArgs({ options: { id: { type: "string" }, name: { type: "string" }, kind: { type: "string" }, tier: { type: "string" }, coverage: { type: "string" }, areas: { type: "string" }, revoke: { type: "string" } } });
 const sql = postgres(process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL, { ssl: "require", prepare: false, max: 1 });
@@ -16,10 +18,7 @@ try {
     const r = await sql`update lightdey.partner_keys set revoked_at = now() where id = ${a.revoke} and revoked_at is null returning id`;
     console.log(r.length ? `Revoked ${a.revoke}` : "No active key with that id");
   } else {
-    if (!a.id || !/^(partner|verified):[a-z0-9-]{3,40}$/.test(a.id)) throw new Error("--id must look like partner:<slug> or verified:<slug>");
-    if (!["verified_partner", "verified_reporter", "official_disco"].includes(a.kind ?? "")) throw new Error("--kind must be verified_partner, verified_reporter or official_disco");
-    const tier = Number(a.tier);
-    if (![1, 2].includes(tier)) throw new Error("--tier must be 1 (official/approved operator) or 2 (verified reporter)");
+    const { tier } = validateSourceSpec({ id: a.id, kind: a.kind, tier: a.tier }); // tier derived from id + kind
     if (!a.name || !a.coverage) throw new Error("--name and --coverage are required");
     const areas = [...new Set((a.areas ?? "").split(",").map((x) => x.trim()).filter(Boolean))];
     if (!areas.length) throw new Error("--areas is required: comma-separated neighbourhood ids this key may report for");

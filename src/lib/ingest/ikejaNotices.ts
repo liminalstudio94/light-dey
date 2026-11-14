@@ -50,9 +50,13 @@ const matchers = AREAS.map((a) => ({
   re: new RegExp(`\\b(${[a.name, ...(a.aliases ?? []).filter((x) => x.length >= 4 && aliasCount.get(x.toLowerCase()) === 1)].map(escape).join("|")})\\b`, "i"),
 }));
 
+/** The publisher's own name ("Ikeja Electric", "IE", feeder/company phrases) is not a mention of the Ikeja neighbourhood. */
+const PUBLISHER = /\bIkeja\s+Electric(?:ity)?(?:\s+(?:Plc|Distribution(?:\s+Company)?))?\b/gi;
+
 /** Supported areas named in the text. Name matching only — never inferred. */
 export function areasMentioned(text: string): string[] {
-  return matchers.filter((m) => m.re.test(text)).map((m) => m.id);
+  const cleaned = text.replace(PUBLISHER, " ");
+  return matchers.filter((m) => m.re.test(cleaned)).map((m) => m.id);
 }
 
 export function noticeObservations(items: FeedItem[], now: Date = new Date(), cfg = EVIDENCE_CONFIG): NewObservation[] {

@@ -24,6 +24,6 @@ jobs:
             -H "Authorization: Bearer ${CRON_SECRET}" "${URL}/api/cron/refresh")
           jq -c '{at, errors, runs: [.runs[] | {sourceId, status, itemsWritten, error}], snapshots, mapCounts}' out.json || cat out.json
           test "$code" = "200"
-          # A source that failed to refresh makes the run red ("skipped" = not due, which is fine).
-          errors=$(jq '[.runs[] | select(.status == "error")] | length' out.json)
-          if [ "$errors" -gt 0 ]; then echo "::error::$errors source(s) failed to refresh"; exit 1; fi
+          # Any failed source or pattern job makes the run red ("skipped" = not due, which is fine).
+          errors=$(jq '.errors // 0' out.json)
+          if [ "$errors" -gt 0 ]; then echo "::error::$errors refresh step(s) failed"; exit 1; fi

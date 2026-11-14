@@ -15,9 +15,13 @@ export interface DiscoLoadProfile {
 export function parseLagosDateTime(s: string): string | null {
   const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (!m) return null;
-  const [, dd, mm, yyyy, hh, mi, ss] = m;
-  const utc = Date.UTC(+yyyy, +mm - 1, +dd, +hh, +mi, +(ss ?? 0)) - LAGOS_UTC_OFFSET_MINUTES * 60_000;
-  return Number.isFinite(utc) ? new Date(utc).toISOString() : null;
+  const [d, mo, y, h, mi, sec] = [m[1], m[2], m[3], m[4], m[5], m[6] ?? "0"].map(Number);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || sec > 59) return null;
+  const local = Date.UTC(y, mo - 1, d, h, mi, sec);
+  // Round-trip: Date.UTC silently rolls 31/02 into March; reject anything that doesn't map back exactly.
+  const back = new Date(local);
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) return null;
+  return new Date(local - LAGOS_UTC_OFFSET_MINUTES * 60_000).toISOString();
 }
 
 /**

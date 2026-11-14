@@ -11,6 +11,13 @@ export interface SnapshotRow {
   evidence: unknown;
 }
 
+/** Thrown when an upsert would move an existing observation to a different scope/area. */
+export class ObservationScopeConflict extends Error {
+  constructor(readonly existingScopeRef: string | null) {
+    super("observation already exists for a different scope");
+  }
+}
+
 export interface PartnerKey {
   keyId: string;
   sourceId: string;

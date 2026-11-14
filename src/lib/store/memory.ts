@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getSource } from "../sources/registry";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import type { DataStore, NewObservation, NewReport, PartnerKey, RunResult, SnapshotRow } from "./types";
+import { ObservationScopeConflict, type DataStore, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow } from "./types";
 
 /**
  * In-process store for local development and tests. Starts EMPTY — it never
@@ -44,6 +44,7 @@ export class MemoryStore implements DataStore {
     let n = 0;
     for (const r of rows) {
       const i = this.observations.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
+      if (i >= 0 && (this.observations[i].scope !== r.scope || this.observations[i].scopeRef !== r.scopeRef)) throw new ObservationScopeConflict(this.observations[i].scopeRef);
       const tier = this.partnerTier(r.sourceId) ?? getSource(r.sourceId)?.tier ?? 3;
       const { payload: _payload, ...rest } = r;
       void _payload;
