@@ -29,10 +29,18 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
     .map(({ a }) => data.statuses.find((x) => x.areaId === a.id)!);
   const k = STATUS_CONFIG.confirmationThreshold;
   const verifiedSays = s.evidence?.find((e) => e.tier === 2 && e.role !== "context" && e.status)?.status ?? null;
+  // Freshness comes from the evidence behind the status, on that evidence's own scale
+  // (official readings age over 90 min, reports over 60) — never recomputed on the community scale.
+  const deciding = s.evidence?.find((e) => e.role === "decisive") ?? s.evidence?.find((e) => e.role !== "context" && e.role !== "estimate");
+  const headlineFreshness = deciding?.freshness ?? (s.lastReportAt ? s.freshness : null);
   const ask =
     mapState === "CONFLICTING"
       ? `Sources disagree right now. Are you in ${area.name}? Help confirm this area.`
-      : mapState === "COMMUNITY_ON" || mapState === "COMMUNITY_OFF" || mapState === "LIKELY_ON" || mapState === "LIKELY_OFF"
+      : mapState === "LIKELY_ON" || mapState === "LIKELY_OFF"
+        ? deciding?.evidenceType === "measured"
+          ? `${MAP_STATE_META[mapState].label} — from an indirect sensor reading (degraded, or behind a generator switch), not a direct measurement. Are you in ${area.name}? Help confirm this area.`
+          : `${MAP_STATE_META[mapState].label} — reports back each other up, but nothing is measured or official yet. Are you in ${area.name}? Help confirm this area.`
+        : mapState === "COMMUNITY_ON" || mapState === "COMMUNITY_OFF"
         ? `${MAP_STATE_META[mapState].label} — not measured or official yet. Are you in ${area.name}? Help confirm this area.`
         : mapState === "UNKNOWN" || hollow
         ? !hasRecentReports(s)
@@ -47,10 +55,6 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
   const shownSide = meta.group === "LIGHT" ? "on" : meta.group === "NO_LIGHT" ? "off" : null;
   const agreeing = shownSide === "on" ? s.onReporters : shownSide === "off" ? s.offReporters : null;
   const latest = latestEvidenceAt(s);
-  // Freshness comes from the evidence behind the status, on that evidence's own scale
-  // (official readings age over 90 min, reports over 60) — never recomputed on the community scale.
-  const deciding = s.evidence?.find((e) => e.role === "decisive") ?? s.evidence?.find((e) => e.role !== "context" && e.role !== "estimate");
-  const headlineFreshness = deciding?.freshness ?? (s.lastReportAt ? s.freshness : null);
 
   return (
     <>
@@ -120,7 +124,8 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
         </p>
       </section>
 
-      <Timeline areaId={areaId} />
+      {/* Refetches whenever the live status refreshes, so "Recent changes" never lags the headline. */}
+      <Timeline areaId={areaId} refreshKey={`${data.generatedAt}|${mapState}`} now={now} />
 
       <div className="mt-6 rounded-3xl border border-line bg-surface p-5">
         <ShareButtons areaName={area.name} path={`/area/${area.id}`} status={s} />
