@@ -1,4 +1,4 @@
-import { TIMEZONE } from "./config";
+import { STATUS_CONFIG, TIMEZONE } from "./config";
 import type { AreaState, Confidence, Freshness, MapState } from "./types";
 
 export function timeAgo(iso: string | null, now = Date.now()): string {
@@ -39,8 +39,8 @@ export type MarkerStyle = "solid" | "reported" | "hollow" | "muted";
 export const MAP_STATE_META: Record<MapState, { label: string; short: string; group: AreaState; style: MarkerStyle; help: string }> = {
   CONFIRMED_ON: { label: "Confirmed: light dey", short: "Confirmed on", group: "LIGHT", style: "solid", help: "Official source or verified reporters." },
   CONFIRMED_OFF: { label: "Confirmed outage", short: "Confirmed off", group: "NO_LIGHT", style: "solid", help: "Official source (e.g. grid data) or verified reporters." },
-  COMMUNITY_ON: { label: "Reported: light dey", short: "Reported on", group: "LIGHT", style: "reported", help: "3+ independent neighbours in the last hour. Not official." },
-  COMMUNITY_OFF: { label: "Reported: no light", short: "Reported off", group: "NO_LIGHT", style: "reported", help: "3+ independent neighbours in the last hour. Not official." },
+  COMMUNITY_ON: { label: "Reported: light dey", short: "Reported on", group: "LIGHT", style: "reported", help: `${STATUS_CONFIG.confirmationThreshold}+ independent neighbours in the last hour. Not official.` },
+  COMMUNITY_OFF: { label: "Reported: no light", short: "Reported off", group: "NO_LIGHT", style: "reported", help: `${STATUS_CONFIG.confirmationThreshold}+ independent neighbours in the last hour. Not official.` },
   CONFLICTING: { label: "Conflicting reports", short: "Conflicting", group: "UNCERTAIN", style: "reported", help: "Sources or neighbours disagree right now." },
   ESTIMATED_ON: { label: "Estimate: usually light", short: "Est. on", group: "LIGHT", style: "hollow", help: "From past reports at this hour. Not live." },
   ESTIMATED_OFF: { label: "Estimate: usually no light", short: "Est. off", group: "NO_LIGHT", style: "hollow", help: "From past reports at this hour. Not live." },
@@ -48,3 +48,7 @@ export const MAP_STATE_META: Record<MapState, { label: string; short: string; gr
 };
 
 export const TIER_LABEL: Record<1 | 2 | 3 | 4, string> = { 1: "Official", 2: "Verified", 3: "Community", 4: "Estimate" };
+
+const MW = new Intl.NumberFormat("en-NG", { maximumFractionDigits: 0 });
+/** Same output on server and in every browser locale (avoids hydration mismatches). */
+export const formatMw = (mw: number) => MW.format(Math.round(mw));

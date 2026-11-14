@@ -3,7 +3,7 @@ import { useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Crosshair, Loader2, Power, PowerOff } from "lucide-react";
 import { AREAS, getArea, nearestAreas } from "@/lib/areas";
-import { REPORTING_RULES } from "@/lib/config";
+import { REPORTING_RULES, STATUS_CONFIG } from "@/lib/config";
 import type { PowerStatus } from "@/lib/types";
 
 type Msg = { kind: "ok" | "error" | "info"; text: string } | null;
@@ -70,7 +70,7 @@ export function ReportPanel({ defaultAreaId, lockArea = false }: { defaultAreaId
       const json = await res.json().catch(() => ({}));
       if (res.ok) {
         const name = getArea(areaId)?.name ?? "your area";
-        setMsg({ kind: "ok", text: `Thanks! Your “${status === "on" ? "Light dey" : "No light"}” report for ${name} is in. It takes 3 neighbours to confirm.` });
+        setMsg({ kind: "ok", text: `Thanks! Your “${status === "on" ? "Light dey" : "No light"}” report for ${name} is in. It takes ${STATUS_CONFIG.confirmationThreshold} neighbours to confirm.` });
         setComment("");
         setShowComment(false);
         window.dispatchEvent(new Event("lightdey:reported"));

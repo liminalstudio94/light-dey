@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { Activity, ArrowRight, ExternalLink, MapPin, Zap } from "lucide-react";
 import { AREAS, getArea } from "@/lib/areas";
-import { STATE_META, lagosTime, timeAgo } from "@/lib/format";
+import { STATE_META, formatMw, lagosTime, timeAgo } from "@/lib/format";
 import type { AreaState, GridContext, MapState, Overview } from "@/lib/types";
 import { AreaSearch } from "./AreaSearch";
 import { AreaStatusCard } from "./AreaStatusCard";
@@ -29,7 +29,7 @@ export function HomeLive({ initial }: { initial: Overview }) {
     { state: "LIGHT", label: "Light dey", total: n("CONFIRMED_ON") + n("COMMUNITY_ON"), detail: `${n("CONFIRMED_ON")} confirmed · ${n("COMMUNITY_ON")} reported` },
     { state: "NO_LIGHT", label: "No light", total: n("CONFIRMED_OFF") + n("COMMUNITY_OFF"), detail: `${n("CONFIRMED_OFF")} confirmed · ${n("COMMUNITY_OFF")} reported` },
     { state: "UNCERTAIN", label: "Conflicting", total: n("CONFLICTING"), detail: "sources disagree" },
-    { state: "UNKNOWN", label: "Unknown", total: n("UNKNOWN") + n("ESTIMATED_ON") + n("ESTIMATED_OFF"), detail: `${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} with a historical estimate` },
+    { state: "UNKNOWN", label: "Unknown", total: n("UNKNOWN"), detail: n("ESTIMATED_ON") + n("ESTIMATED_OFF") ? `+ ${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} more with only a historical estimate` : "not enough verified data" },
   ];
 
   return (
@@ -156,8 +156,8 @@ function GridCard({ grid }: { grid: GridContext | null }) {
         <>
           <p className="mt-2 text-sm text-ink">
             {grid.collapse ? <strong className="text-off">Grid collapse — all Lagos areas marked as confirmed outage. </strong> : null}
-            {grid.discos.map((d) => `${d.name}: ${Math.round(d.mw)} MW`).join(" · ")}
-            {grid.totalMw !== null && <span className="text-ink-3"> · all DisCos {Math.round(grid.totalMw).toLocaleString()} MW</span>}
+            {grid.discos.map((d) => `${d.name}: ${formatMw(d.mw)} MW`).join(" · ")}
+            {grid.totalMw !== null && <span className="text-ink-3"> · all DisCos {formatMw(grid.totalMw)} MW</span>}
           </p>
           <p className="mt-1 text-xs text-ink-3">Power reaching a DisCo doesn&rsquo;t mean every feeder has light (load shedding). We only use these figures to confirm outages.</p>
         </>

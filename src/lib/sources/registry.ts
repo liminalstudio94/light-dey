@@ -137,7 +137,7 @@ export const SOURCES: SourceMeta[] = [
     url: null,
     credentials: null,
     refreshMinutes: null,
-    reliability: "Anonymous, rate-limited, deduplicated. Needs 3 independent reporters (max 2 per network) within 60 minutes.",
+    reliability: "Anonymous, rate-limited, deduplicated. Needs several independent reporters (max 2 per network) within 60 minutes — see /about for the current threshold.",
     integration: "live",
     active: true,
     usage: "Community-reported light / no light, or conflicting.",
@@ -178,6 +178,18 @@ export const SOURCES: SourceMeta[] = [
 ];
 
 const byId = new Map(SOURCES.map((s) => [s.id, s]));
+
+/** Hosts we will link to as "Source". Anything else (or non-https) is never shown as attribution. */
+export const TRUSTED_SOURCE_HOSTS = new Set(["www.niggrid.org", "niggrid.org", "www.ikejaelectric.com", "ikejaelectric.com", "ekedp.com", "www.ekedp.com"]);
+export function isTrustedSourceUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && TRUSTED_SOURCE_HOSTS.has(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 export function getSource(id: string): SourceMeta | undefined {
   return byId.get(id);
 }

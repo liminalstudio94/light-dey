@@ -1,7 +1,10 @@
 "use client";
 import { Clock, Info, MapPin, ShieldCheck, Users } from "lucide-react";
 import { distanceKm, getArea, AREAS } from "@/lib/areas";
+import { STATUS_CONFIG } from "@/lib/config";
 import { CONFIDENCE_LABEL, FRESHNESS_LABEL, MAP_STATE_META, STATE_META, hourLabel, lagosTime, timeAgo } from "@/lib/format";
+import { latestEvidenceAt } from "@/lib/share";
+import { freshnessOf } from "@/lib/status";
 import type { Overview } from "@/lib/types";
 import { AreaStatusCard } from "./AreaStatusCard";
 import { EvidenceList } from "./EvidenceList";
@@ -24,12 +27,21 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
     .sort((x, y) => x.km - y.km)
     .slice(0, 3)
     .map(({ a }) => data.statuses.find((x) => x.areaId === a.id)!);
+  const k = STATUS_CONFIG.confirmationThreshold;
   const ask =
-    mapState === "UNKNOWN" || mapState === "CONFLICTING" || hollow
-      ? s.leaning
-        ? `${s.leaning === "on" ? s.onReporters : s.offReporters} of 3 needed neighbours say ${s.leaning === "on" ? "light dey" : "no light"}. Can you confirm?`
-        : "No one has confirmed recently. Are you in " + area.name + " now? One tap helps."
-      : null;
+    mapState === "CONFLICTING"
+      ? `Sources disagree right now. Are you in ${area.name}? Tell us what you see.`
+      : mapState === "UNKNOWN" || hollow
+        ? s.recentReports === 0
+          ? `No one has reported recently. Are you in ${area.name} now? One tap helps.`
+          : s.leaning
+            ? `${s.leaning === "on" ? s.onReporters : s.offReporters} of ${k} needed neighbours say ${s.leaning === "on" ? "light dey" : "no light"}. Can you confirm?`
+            : `Recent reports don't agree yet. Are you in ${area.name}? Tell us what you see.`
+        : null;
+  // Agreement is measured against the status shown, not whatever side the community leaned.
+  const shownSide = meta.group === "LIGHT" ? "on" : meta.group === "NO_LIGHT" ? "off" : null;
+  const agreeing = shownSide === "on" ? s.onReporters : shownSide === "off" ? s.offReporters : null;
+  const latest = latestEvidenceAt(s);
 
   return (
     <>
@@ -45,20 +57,20 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
         )}
         <dl className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
           <div>
-            <dt className="flex items-center gap-1 text-ink-3"><Users className="h-3.5 w-3.5" aria-hidden /> Neighbours agreeing</dt>
-            <dd className="mt-1 font-semibold">{s.confirmingUsers}</dd>
+            <dt className="flex items-center gap-1 text-ink-3"><Users className="h-3.5 w-3.5" aria-hidden /> Neighbours agreeing with this</dt>
+            <dd className="mt-1 font-semibold">{agreeing === null ? "—" : agreeing}</dd>
           </div>
           <div>
             <dt className="text-ink-3">Community reports (1h)</dt>
             <dd className="mt-1 font-semibold">{s.recentReports} · {s.onReporters} on / {s.offReporters} off</dd>
           </div>
           <div>
-            <dt className="flex items-center gap-1 text-ink-3"><Clock className="h-3.5 w-3.5" aria-hidden /> Last report</dt>
-            <dd className="mt-1 font-semibold">{s.lastReportAt ? `${lagosTime(s.lastReportAt)} · ${timeAgo(s.lastReportAt, now)}` : "None yet"}</dd>
+            <dt className="flex items-center gap-1 text-ink-3"><Clock className="h-3.5 w-3.5" aria-hidden /> Latest evidence</dt>
+            <dd className="mt-1 font-semibold">{latest ? `${lagosTime(latest)} · ${timeAgo(latest, now)}` : "None yet"}</dd>
           </div>
           <div>
             <dt className="flex items-center gap-1 text-ink-3"><ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Confidence</dt>
-            <dd className="mt-1 font-semibold">{CONFIDENCE_LABEL[s.confidence]} · {FRESHNESS_LABEL[s.freshness]}</dd>
+            <dd className="mt-1 font-semibold">{CONFIDENCE_LABEL[s.confidence]}{latest ? ` · ${FRESHNESS_LABEL[freshnessOf((now - Date.parse(latest)) / 60_000)]}` : ""}</dd>
           </div>
         </dl>
         {s.locationMatchedReports > 0 && (
@@ -69,7 +81,8 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
 
       {ask && (
         <p className="mt-4 rounded-2xl border border-brand/30 bg-surface px-4 py-3 text-sm font-medium text-ink" role="note">
-          {ask} <a href="#report" className="font-semibold text-brand underline-offset-2 hover:underline">Report now ↓</a>
+          {ask} <a href="#report" className="font-semibold text-brand underline-offset-2 hover:underline lg:hidden">Report now ↓</a>
+          <a href="#report-desktop" className="hidden font-semibold text-brand underline-offset-2 hover:underline lg:inline">Report now →</a>
         </p>
       )}
 

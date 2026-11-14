@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { MapPin, Users } from "lucide-react";
 import { getArea } from "@/lib/areas";
+import { STATUS_CONFIG } from "@/lib/config";
 import { CONFIDENCE_LABEL, FRESHNESS_LABEL, TIER_LABEL, timeAgo } from "@/lib/format";
+import { latestEvidenceAt } from "@/lib/share";
 import type { AreaStatus } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -31,8 +33,8 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
           <dd className="mt-0.5 flex items-center gap-1 font-semibold text-ink"><Users className="h-3 w-3" aria-hidden />{status.confirmingUsers}</dd>
         </div>
         <div>
-          <dt className="text-ink-3">Last report</dt>
-          <dd className="mt-0.5 font-semibold text-ink">{timeAgo(status.lastReportAt, now)}</dd>
+          <dt className="text-ink-3">Last update</dt>
+          <dd className="mt-0.5 font-semibold text-ink">{timeAgo(latestEvidenceAt(status), now)}</dd>
         </div>
       </dl>
       <p className="mt-3 border-t border-line pt-3 text-xs text-ink-2">
@@ -41,7 +43,7 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
             <span className="font-semibold">{TIER_LABEL[decisive.tier]}</span> · {decisive.tier === 3 ? `${decisive.count} independent reports` : decisive.tier === 4 ? "not live" : decisive.sourceName} · {CONFIDENCE_LABEL[status.confidence]}
           </>
         ) : unknown && status.leaning ? (
-          `1–2 people say ${status.leaning === "on" ? "light dey" : "no light"} · needs 3 to confirm`
+          `${status.leaning === "on" ? status.onReporters : status.offReporters} of ${STATUS_CONFIG.confirmationThreshold} needed say ${status.leaning === "on" ? "light dey" : "no light"}`
         ) : unknown ? (
           "Not enough verified data — tap to report"
         ) : (

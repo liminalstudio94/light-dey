@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Info } from "lucide-react";
 import type { HistoryStats } from "@/lib/history";
+import { STATUS_CONFIG } from "@/lib/config";
 import { hourLabel } from "@/lib/format";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -68,7 +69,7 @@ export function HistoryPanel({ areaId, areaName }: { areaId: string; areaName: s
           {empty ? (
             <div className="mt-6 rounded-2xl border border-dashed border-line bg-surface px-5 py-8 text-center">
               <p className="font-display text-lg font-bold">No confirmed history yet</p>
-              <p className="mx-auto mt-1 max-w-md text-sm text-ink-2">History appears once at least 3 neighbours confirm the status. Report what you see and share this page so others can too.</p>
+              <p className="mx-auto mt-1 max-w-md text-sm text-ink-2">History appears once at least {STATUS_CONFIG.confirmationThreshold} neighbours confirm the status. Report what you see and share this page so others can too.</p>
             </div>
           ) : (
             <div className="mt-6 grid gap-4 lg:grid-cols-2">

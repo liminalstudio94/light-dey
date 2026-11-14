@@ -26,13 +26,14 @@ Last verified: **2026-11-13**.
 - Access: public HTML page, no login, no API, no robots.txt (pages carry `noindex`, which governs search indexing, not access). No terms of use found on the site.
 - Fetch: at most every **10 minutes** (`lightdey.sources.last_attempt_at` lease), 12 s timeout, 3 attempts with backoff, identifying User-Agent `LightDey/1.0 (+<site>/sources; …)`.
 - Parsed: "Data as at dd/mm/yyyy hh:mm:ss" (Lagos time) and the `MainContent_gvDiscoLoadProfiles` table. Fails closed if the timestamp, Eko/Ikeja rows or page total are missing or inconsistent.
-- Stored: `grid_total` (national) + `disco_allocation` for Eko and Ikeja. Valid 45 minutes from "as at".
+- Stored: `grid_total` (national) + `disco_allocation` for Eko and Ikeja. Valid 90 minutes from "as at" (NISO publishes about hourly). The **newest reading per DisCo/total always replaces older ones**, so a recovery clears an outage at once.
+- Outage status is derived from the MW value at read time, never trusted from a stored flag. The page's own **Total row is required** and must match the DisCo sum, or the run fails.
 - Rules: total ≤ **300 MW** ⇒ national collapse ⇒ `CONFIRMED_OFF` for every Lagos area. DisCo ≤ **5 MW** ⇒ `CONFIRMED_OFF` **only** for areas in `src/lib/sources/discos.ts`. Anything else is context ("Eko DisCo is receiving 482 MW…").
 - Kill switch: `SOURCE_NISO_ENABLED=0`.
 
 ### Ikeja Electric notices
 - URL: https://www.ikejaelectric.com/feed/ (WordPress RSS, intended for syndication). robots.txt: `Crawl-delay: 10`; we fetch hourly.
-- Stored: notices from the last 14 days whose title or text names a supported area (name or ≥4-letter alias, word boundary). Feeder lists are often images, so most notices can't be matched.
+- Stored: notices from the last 14 days whose title or text names a supported area (full name, or a ≥4-letter alias unique to one area — shared aliases like "lekki" are ignored), and whose link is on Ikeja Electric's own https site. Truncated or malformed feeds fail the run. Feeder lists are often images, so most notices can't be matched.
 - Never sets a status. Shown as "Official notice" context on the named areas.
 - Kill switch: `SOURCE_IKEJA_NOTICES_ENABLED=0`.
 
@@ -47,9 +48,9 @@ Hour-of-day pattern from the last 30 days of confirmed community hours (`hourly_
 ### Approved partners & verified reporters (implemented)
 1. Approve the partner (agreement, contact, coverage), then:
    ```bash
-   npm run partner:key -- --id partner:acme-estate --name "Acme Estate facilities" --kind verified_partner --tier 1 --coverage "Acme Estate, Lekki Phase 1"
-   # verified individual:
-   npm run partner:key -- --id verified:ada-yaba --name "Ada (Yaba)" --kind verified_reporter --tier 2 --coverage "Yaba"
+   npm run partner:key -- --id partner:acme-estate --name "Acme Estate facilities" --kind verified_partner --tier 1 --coverage "Acme Estate, Lekki Phase 1" --areas lekki-phase-1
+   # verified individual — one person = one source = one active key, one home area:
+   npm run partner:key -- --id verified:ada-yaba --name "Ada (Yaba)" --kind verified_reporter --tier 2 --coverage "Yaba" --areas yaba
    ```
    The key is printed once; only its SHA-256 hash is stored. Revoke with `npm run partner:key -- --revoke <key-id>`.
 2. The partner sends:
@@ -60,7 +61,8 @@ Hour-of-day pattern from the last 30 days of confirmed community hours (`hourly_
 
    {"neighbourhoodId":"yaba","status":"off","observedAt":"2026-11-13T19:05:00+01:00","externalId":"acme-0001","note":"optional"}
    ```
-   Rules: known area, `on`/`off`, observedAt within the last 60 min and not in the future, idempotent on `externalId`, 120 per key per hour, audit row in `verification_events`.
+   Rules: known area **within the key's approved `--areas`** (else 403), `on`/`off`, observedAt within the last 60 min and not in the future, idempotent on `externalId` (an id stays bound to its first area; reuse elsewhere → 409), **120 writes per key per hour, enforced atomically** (`partner_key_writes`), audit row in `verification_events`. Partner and reporter ids are never shown publicly ("Approved partner" / "Verified reporter").
+   A single verified report is shown as Unknown with the reason; it takes two verified reporters (or one plus neighbours) to confirm.
 
 ### X (Twitter)
 Requires a paid X API plan (`X_BEARER_TOKEN`). Not implemented. It would reuse the notice pipeline (context only).

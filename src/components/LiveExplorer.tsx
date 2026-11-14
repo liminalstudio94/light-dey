@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { List, Map as MapIcon } from "lucide-react";
 import { AREAS } from "@/lib/areas";
+import { STATUS_CONFIG } from "@/lib/config";
 import { MAP_STATE_META } from "@/lib/format";
 import type { AreaStatus, MapState } from "@/lib/types";
 import { AreaStatusCard } from "./AreaStatusCard";
@@ -36,7 +37,8 @@ export function LiveExplorer({ statuses, now, defaultView = "map", mapHeight = 4
     setHidden((prev) => {
       const next = new Set(prev);
       if (next.has(m)) next.delete(m);
-      else if (present.filter((p) => !next.has(p)).length > 1) next.add(m);
+      // Never let the last state that actually has areas be hidden.
+      else if (present.filter((p) => !next.has(p) && counts[p] > 0 && p !== m).length > 0 || counts[m] === 0) next.add(m);
       return next;
     });
 
@@ -86,7 +88,7 @@ export function LiveExplorer({ statuses, now, defaultView = "map", mapHeight = 4
 function MapLegend() {
   const rows: { m: MapState; label: string }[] = [
     { m: "CONFIRMED_OFF", label: "Dark ring = confirmed (official / verified)" },
-    { m: "COMMUNITY_ON", label: "Plain = reported by 3+ neighbours" },
+    { m: "COMMUNITY_ON", label: `Plain = reported by ${STATUS_CONFIG.confirmationThreshold}+ neighbours` },
     { m: "ESTIMATED_ON", label: "Dashed = estimate from history, not live" },
     { m: "UNKNOWN", label: "Grey = not enough verified data" },
   ];

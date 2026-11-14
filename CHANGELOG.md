@@ -1,6 +1,14 @@
 # Changelog
 
 ## [Unreleased] — evidence UI (LD-043)
+### Fixed (Qodo review of PR #4)
+- "Source" links only for https URLs on trusted official hosts; off-site RSS links are never stored.
+- Unknown tile counts only Unknown areas; estimates listed separately.
+- MW figures formatted with a fixed locale (no hydration mismatch).
+- Share text: community → "reported" (never "confirmed"); grid outages → "grid supply outage" with the generator/solar caveat; verified confirmations name a safe label.
+- Area page: agreement counted against the shown status; conflicting areas get a "sources disagree" prompt; "Latest evidence" uses official/verified times too; working "Report now" link at every breakpoint.
+- Thresholds in all user copy come from config.
+- The map filter can't hide the last populated state.
 ### Added
 - Eight explicit map states with marker styles (confirmed ring, reported, dashed estimate, grey unknown), legend, per-state filters.
 - "Where this comes from" attribution on area pages; Unknown explains why and asks to confirm; NISO grid card on the homepage; `/sources` page.

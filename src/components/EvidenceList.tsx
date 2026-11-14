@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { FRESHNESS_LABEL, TIER_LABEL, lagosTime, timeAgo } from "@/lib/format";
+import { isTrustedSourceUrl } from "@/lib/sources/registry";
 import type { EvidenceItem } from "@/lib/types";
 
 const ROLE_LABEL: Record<EvidenceItem["role"], string> = {
@@ -38,7 +39,7 @@ export function EvidenceList({ items, now }: { items: EvidenceItem[]; now: numbe
               <span>Historical pattern</span>
             )}
             {e.count > 1 && <span>· {e.count} {e.tier === 4 ? "hours of data" : "independent reports"}</span>}
-            {e.url && (
+            {isTrustedSourceUrl(e.url) && (
               <a href={e.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 font-medium text-brand">
                 Source <ExternalLink className="h-3 w-3" aria-hidden />
               </a>
