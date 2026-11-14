@@ -34,6 +34,8 @@ export default function LagosMapInner({ statuses, now, height = 460, focusId }: 
         const path =
           ms.style === "solid"
             ? { color: "#0f1115", weight: 3, fillColor: m.hex, fillOpacity: 0.95 }
+            : ms.style === "likely"
+              ? { color: "#0f1115", weight: 2, dashArray: "3 3", fillColor: m.hex, fillOpacity: 0.8 }
             : ms.style === "reported"
               ? { color: "#ffffff", weight: 2, fillColor: m.hex, fillOpacity: 0.9 }
               : ms.style === "hollow"

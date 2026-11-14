@@ -30,10 +30,21 @@ export function shareText(areaName: string, s: AreaStatus, now = Date.now()): st
       return `NO LIGHT in ${areaName} — confirmed by ${decisive?.sourceName ?? "verified sources"}${at}.${conf} Check Light Dey? before you go:`;
     case "CONFIRMED_ON":
       return `LIGHT DEY in ${areaName} — confirmed by ${decisive?.sourceName ?? "verified sources"}${at}.${conf} Check Light Dey? before you go:`;
+    case "LIKELY_ON":
+    case "LIKELY_OFF": {
+      // Indirect evidence: name it, never call it a direct confirmation.
+      const what = ms === "LIKELY_OFF" ? "Likely NO LIGHT" : "Likely LIGHT DEY";
+      const basis = decisive?.evidenceType === "measured" ? "an indirect sensor reading (not a direct measurement)" : "reports that back each other up (not measured or official)";
+      return `${what} in ${areaName} — based on ${basis}${at}.${conf} Help confirm on Light Dey?:`;
+    }
     case "COMMUNITY_ON":
-      return `LIGHT DEY reported in ${areaName}: ${s.confirmingUsers} neighbours reported electricity in the last hour (not official).${when}${conf} Check Light Dey? before you go:`;
-    case "COMMUNITY_OFF":
-      return `NO LIGHT reported in ${areaName}: ${s.confirmingUsers} neighbours reported an outage in the last hour (not official).${when}${conf} Check Light Dey? before you go:`;
+    case "COMMUNITY_OFF": {
+      const what = ms === "COMMUNITY_ON" ? "LIGHT DEY reported" : "NO LIGHT reported";
+      // A single verified reporter can decide a reported state with zero neighbour reports.
+      if (decisive && decisive.sourceId !== "community")
+        return `${what} in ${areaName} by a verified reporter${at} (not official, not yet corroborated).${conf} Help confirm on Light Dey?:`;
+      return `${what} in ${areaName}: ${s.confirmingUsers} neighbours reported ${ms === "COMMUNITY_ON" ? "electricity" : "an outage"} in the last hour (not official).${when}${conf} Check Light Dey? before you go:`;
+    }
     case "CONFLICTING":
       // Quote neighbour counts only when the neighbours themselves disagree; otherwise say sources disagree.
       return s.onReporters > 0 && s.offReporters > 0

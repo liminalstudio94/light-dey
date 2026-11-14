@@ -1,6 +1,7 @@
 import "server-only";
 import postgres from "postgres";
 import type { HourPattern, MapState, Observation, Report } from "../types";
+import { SENSOR_CONFIG } from "../config";
 import type { DeviceRow } from "../sensors/health";
 import { ObservationScopeConflict, type DataStore, type HeartbeatWrite, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow, type TimelineEntry } from "./types";
 
@@ -309,8 +310,8 @@ export class PostgresStore implements DataStore {
   }
 
   async pruneSensorData(now: Date) {
-    const n = await this.sql`delete from lightdey.sensor_nonces where seen_at < ${now}::timestamptz - interval '1 hour' returning 1`;
-    const h = await this.sql`delete from lightdey.sensor_heartbeats where received_at < ${now}::timestamptz - interval '7 days' returning 1`;
+    const n = await this.sql`delete from lightdey.sensor_nonces where seen_at < ${now}::timestamptz - make_interval(mins => ${SENSOR_CONFIG.nonceTtlMinutes}) returning 1`;
+    const h = await this.sql`delete from lightdey.sensor_heartbeats where received_at < ${now}::timestamptz - make_interval(days => ${SENSOR_CONFIG.heartbeatRetentionDays}) returning 1`;
     return { nonces: n.length, heartbeats: h.length };
   }
 }

@@ -154,3 +154,18 @@ describe("Qodo pass 4 on PR #2 — share text", () => {
     expect(shareText("Ajah", mixed, NOW.getTime())).toMatch(/1 say light dey, 1 say no light/);
   });
 });
+
+describe("Qodo pass 4 on PR #5 — share text", () => {
+  const base = () => aggregateAreaStatus("yaba", [], NOW);
+  const item = (p: Partial<EvidenceItem>) => ev({ role: "decisive", status: "off", ...p });
+  it("likely sensor readings share as indirect sensor evidence, not reports (#5)", () => {
+    const t = shareText("Yaba", { ...base(), mapState: "LIKELY_OFF", evidence: [item({ sourceId: "light_dey_sensor", sourceName: "Light Dey sensors", evidenceType: "measured" })] }, NOW.getTime());
+    expect(t).toMatch(/^Likely NO LIGHT in Yaba — based on an indirect sensor reading \(not a direct measurement\)/);
+    expect(t).not.toMatch(/some recent reports/);
+  });
+  it("one verified report never shares as '0 neighbours' (#6)", () => {
+    const t = shareText("Yaba", { ...base(), mapState: "COMMUNITY_OFF", evidence: [item({ sourceId: "verified_reporters", sourceName: "Verified reporter", tier: 2, evidenceType: "reported" })] }, NOW.getTime());
+    expect(t).toMatch(/^NO LIGHT reported in Yaba by a verified reporter/);
+    expect(t).not.toMatch(/0 neighbours/);
+  });
+});

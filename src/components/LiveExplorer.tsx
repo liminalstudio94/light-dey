@@ -9,7 +9,7 @@ import { AreaStatusCard } from "./AreaStatusCard";
 import { LagosMap } from "./LagosMap";
 import { StatusDot } from "./StatusBadge";
 
-const ORDER: MapState[] = ["CONFIRMED_ON", "COMMUNITY_ON", "CONFIRMED_OFF", "COMMUNITY_OFF", "CONFLICTING", "ESTIMATED_ON", "ESTIMATED_OFF", "UNKNOWN"];
+const ORDER: MapState[] = ["CONFIRMED_ON", "LIKELY_ON", "COMMUNITY_ON", "CONFIRMED_OFF", "LIKELY_OFF", "COMMUNITY_OFF", "CONFLICTING", "ESTIMATED_ON", "ESTIMATED_OFF", "UNKNOWN"];
 const RANK = Object.fromEntries(ORDER.map((m, i) => [m, i])) as Record<MapState, number>;
 const ms = (s: AreaStatus): MapState => s.mapState ?? "UNKNOWN";
 

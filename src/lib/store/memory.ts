@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getSource } from "../sources/registry";
 import type { HourPattern, MapState, Observation, Report } from "../types";
+import { SENSOR_CONFIG } from "../config";
 import type { DeviceRow } from "../sensors/health";
 import { ObservationScopeConflict, type DataStore, type HeartbeatWrite, type NewObservation, type NewReport, type PartnerKey, type RunResult, type SnapshotRow, type TimelineEntry } from "./types";
 
@@ -180,13 +181,13 @@ export class MemoryStore implements DataStore {
   async pruneSensorData(now: Date) {
     let nonces = 0;
     for (const [k, t] of this.nonces) {
-      if (t < now.getTime() - 3_600_000) {
+      if (t < now.getTime() - SENSOR_CONFIG.nonceTtlMinutes * 60_000) {
         this.nonces.delete(k);
         nonces++;
       }
     }
     const before = this.heartbeats.length;
-    this.heartbeats = this.heartbeats.filter((h) => h.receivedAt.getTime() >= now.getTime() - 7 * 86_400_000);
+    this.heartbeats = this.heartbeats.filter((h) => h.receivedAt.getTime() >= now.getTime() - SENSOR_CONFIG.heartbeatRetentionDays * 86_400_000);
     return { nonces, heartbeats: before - this.heartbeats.length };
   }
 }

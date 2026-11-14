@@ -40,15 +40,12 @@ def read_cmd(cmd: str) -> str:
         return "unknown"
 
 
-def power_source(mains: str) -> str:
-    # The Pi itself runs from a UPS/power bank in a typical build; when mains is off it is on battery.
-    return "grid" if mains == "on" else ("battery" if mains == "off" else "unknown")
-
-
-def send(url: str, device_id: str, secret: str, mains: str) -> int:
+def send(url: str, device_id: str, secret: str, mains: str, device_supply: str) -> int:
+    """Returns the HTTP status, or 0 for a network/DNS/timeout failure (retried with backoff)."""
     body = json.dumps({
         "v": 1, "deviceId": device_id, "ts": int(time.time()), "nonce": secrets.token_urlsafe(18),
-        "mains": mains, "powerSource": power_source(mains), "firmware": FIRMWARE, "selfTest": "pass",
+        # powerSource is what the Pi itself runs on — configured, never inferred from the mains reading.
+        "mains": mains, "powerSource": device_supply, "firmware": FIRMWARE, "selfTest": "pass",
     }, separators=(",", ":"))
     sig = "v1=" + hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
     req = urllib.request.Request(url.rstrip("/") + "/api/sensors/heartbeat", data=body.encode(), method="POST",
@@ -58,6 +55,9 @@ def send(url: str, device_id: str, secret: str, mains: str) -> int:
             return r.status
     except urllib.error.HTTPError as e:
         return e.code
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+        print(f"{time.strftime('%H:%M:%S')} network error: {e}", file=sys.stderr, flush=True)
+        return 0
 
 
 def main() -> None:
@@ -69,6 +69,8 @@ def main() -> None:
     g.add_argument("--mains-cmd")
     g.add_argument("--test-mains", choices=["on", "off"], help="bench testing against localhost only")
     p.add_argument("--active-low", action="store_true")
+    p.add_argument("--device-supply", choices=["ups", "battery", "grid", "unknown"], default="unknown",
+                   help="what powers the Pi itself (e.g. 'ups' for the documented UPS build); never inferred from mains")
     p.add_argument("--once", action="store_true")
     a = p.parse_args()
     device_id, secret = os.environ.get("LIGHTDEY_DEVICE_ID"), os.environ.get("LIGHTDEY_DEVICE_SECRET")
@@ -79,12 +81,12 @@ def main() -> None:
     delay = a.interval
     while True:
         mains = a.test_mains or (read_gpio(a.gpio, a.active_low) if a.gpio is not None else read_cmd(a.mains_cmd))
-        status = send(a.url, device_id, secret, mains)
+        status = send(a.url, device_id, secret, mains, a.device_supply)
         print(f"{time.strftime('%H:%M:%S')} mains={mains} -> HTTP {status}", flush=True)
         if a.once:
             sys.exit(0 if status == 202 else 1)
-        # Back off on server errors / rate limiting; never send faster than the protocol allows.
-        delay = a.interval if status in (202, 409) else min(delay * 2, 600)
+        # Back off on network errors (0), server errors and rate limiting; never send faster than allowed.
+        delay = a.interval if status in (202, 409) else min(max(delay, a.interval) * 2, 600)
         time.sleep(max(delay, 20))
 
 

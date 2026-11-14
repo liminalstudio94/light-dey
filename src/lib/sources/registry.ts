@@ -124,7 +124,9 @@ export const SOURCES: SourceMeta[] = [
     refreshMinutes: 15,
     reliability: "Weak proxy: generators, inverters and mobile networks keep internet up during grid outages, and internet fails for other reasons.",
     integration: "awaiting_permission",
-    active: false,
+    // Active in the DB so the adapter can lease and its context can be read once enabled;
+    // SOURCE_IODA_ENABLED (opt-in, default off) is the permission gate for both fetching and reading.
+    active: true,
     usage: "Context only, Lagos-wide: 'connectivity drop detected'. Never sets or changes a status.",
     notes: "API publicly reachable and verified 2026-11-14 (region 2935 'Lagos', 10-min signals, outage events). Adapter implemented but OFF unless SOURCE_IODA_ENABLED=1 after permission is granted.",
   },
