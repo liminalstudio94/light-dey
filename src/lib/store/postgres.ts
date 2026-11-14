@@ -28,14 +28,15 @@ const toReport = (r: Row): Report => ({
 /**
  * Server-only store talking straight to Postgres (Supabase) in the `lightdey`
  * schema. The connection string carries DB credentials and must never reach
- * the browser. `prepare: false` keeps it compatible with the Supabase
- * transaction pooler used by serverless functions.
+ * the browser. `prepare: false` and `max_pipeline: 1` keep it compatible with
+ * the Supabase transaction pooler: pipelining several queries on one pooled
+ * connection hung the whole pool in production (2026-11-13).
  */
 export class PostgresStore implements DataStore {
   readonly kind = "supabase" as const;
   private sql: postgres.Sql;
   constructor(url: string) {
-    this.sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, ssl: url.includes("localhost") ? false : "require" });
+    this.sql = postgres(url, { prepare: false, max_pipeline: 1, max: 3, idle_timeout: 20, connect_timeout: 10, ssl: url.includes("localhost") ? false : "require" });
   }
 
   async insertReport(r: NewReport & { lat?: number; lng?: number }): Promise<Report> {

@@ -8,8 +8,8 @@ export function SiteFooter() {
         <div>
           <Logo dark />
           <p className="mt-3 max-w-sm text-sm leading-relaxed">
-            No light? Know light. Community-reported electricity status for Lagos. Reports come from people like you — not from the
-            distribution companies — so always check the confidence and time.
+            No light? Know light. Community-reported electricity status for Lagos. Statuses combine official grid data and reports from people like you —
+            every status shows its source, time and confidence.
           </p>
         </div>
         <nav aria-label="Footer" className="grid grid-cols-2 gap-2 text-sm">
@@ -19,6 +19,7 @@ export function SiteFooter() {
           <Link href="/terms" className="hover:text-white">Terms</Link>
           <Link href="/map" className="hover:text-white">Live map</Link>
           <Link href="/report" className="hover:text-white">Report status</Link>
+          <Link href="/sources" className="hover:text-white">Data sources</Link>
         </nav>
       </div>
       <div className="border-t border-white/10 py-4 text-center text-xs text-white/50">

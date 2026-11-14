@@ -1,6 +1,7 @@
 import { AREAS } from "../areas";
 import { EVIDENCE_CONFIG } from "../config";
 import type { NewObservation } from "../store/types";
+import { isTrustedSourceUrl } from "../sources/registry";
 import { decodeEntities, stripTags } from "./http";
 
 export const IKEJA_FEED_URL = "https://www.ikejaelectric.com/feed/";
@@ -70,6 +71,8 @@ export function noticeObservations(items: FeedItem[], now: Date = new Date(), cf
     .filter((i) => now.getTime() - Date.parse(i.publishedAt) <= maxAgeMs)
     .map((i) => ({ i, areas: areasMentioned(`${i.title} ${i.text}`) }))
     .filter(({ areas }) => areas.length > 0)
+    // A link that isn't on Ikeja Electric's own https site is never stored as attribution.
+    .filter(({ i }) => isTrustedSourceUrl(i.link) && /(^|\.)ikejaelectric\.com$/.test(new URL(i.link).hostname))
     .map(({ i, areas }) => ({
       sourceId: "ikeja_electric_notices",
       externalId: i.guid,

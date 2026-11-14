@@ -1,22 +1,21 @@
 "use client";
 import Link from "next/link";
-import { Activity, ArrowRight, MapPin } from "lucide-react";
+import { Activity, ArrowRight, ExternalLink, MapPin, Zap } from "lucide-react";
 import { AREAS, getArea } from "@/lib/areas";
-import { STATE_META, lagosTime, timeAgo } from "@/lib/format";
-import type { Overview } from "@/lib/types";
-import type { AreaState } from "@/lib/types";
+import { STATE_META, formatMw, lagosTime, timeAgo } from "@/lib/format";
+import type { AreaState, GridContext, MapState, Overview } from "@/lib/types";
 import { AreaSearch } from "./AreaSearch";
 import { AreaStatusCard } from "./AreaStatusCard";
 import { LiveExplorer } from "./LiveExplorer";
 import { StatusDot } from "./StatusBadge";
 import { useOverview } from "./useOverview";
 
-const ORDER: AreaState[] = ["LIGHT", "NO_LIGHT", "UNCERTAIN", "UNKNOWN"];
 
 export function HeroSearch({ initial }: { initial: Overview }) {
   const data = useOverview(initial);
   const states = Object.fromEntries(data.statuses.map((s) => [s.areaId, s.state]));
-  return <AreaSearch states={states} autoFocus={false} />;
+  const mapStates = Object.fromEntries(data.statuses.filter((s) => s.mapState).map((s) => [s.areaId, s.mapState!]));
+  return <AreaSearch states={states} mapStates={mapStates} autoFocus={false} />;
 }
 
 /** Every live section of the home page shares one polled overview. */
@@ -24,7 +23,16 @@ export function HomeLive({ initial }: { initial: Overview }) {
   const data = useOverview(initial);
   const now = Date.parse(data.generatedAt);
   const popular = AREAS.filter((a) => a.popular).map((a) => data.statuses.find((s) => s.areaId === a.id)!).filter(Boolean);
-  const confirmed = data.counts.LIGHT + data.counts.NO_LIGHT;
+  const mc = data.mapCounts ?? ({} as Record<MapState, number>);
+  const n = (m: MapState) => mc[m] ?? 0;
+  // Conflicting areas have live evidence too — it just disagrees.
+  const confirmed = n("CONFIRMED_ON") + n("CONFIRMED_OFF") + n("COMMUNITY_ON") + n("COMMUNITY_OFF") + n("CONFLICTING");
+  const tiles: { state: AreaState; label: string; total: number; detail: string }[] = [
+    { state: "LIGHT", label: "Light dey", total: n("CONFIRMED_ON") + n("COMMUNITY_ON"), detail: `${n("CONFIRMED_ON")} confirmed · ${n("COMMUNITY_ON")} reported` },
+    { state: "NO_LIGHT", label: "No light", total: n("CONFIRMED_OFF") + n("COMMUNITY_OFF"), detail: `${n("CONFIRMED_OFF")} confirmed · ${n("COMMUNITY_OFF")} reported` },
+    { state: "UNCERTAIN", label: "Conflicting", total: n("CONFLICTING"), detail: "sources disagree" },
+    { state: "UNKNOWN", label: "Unknown", total: n("UNKNOWN"), detail: n("ESTIMATED_ON") + n("ESTIMATED_OFF") ? `+ ${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} more with only a historical estimate` : "not enough verified data" },
+  ];
 
   return (
     <>
@@ -40,16 +48,17 @@ export function HomeLive({ initial }: { initial: Overview }) {
           <p className="text-sm text-ink-2">{confirmed} of {data.statuses.length} areas have current evidence (each status shows its own age)</p>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {ORDER.map((s) => (
-            <div key={s} className={`rounded-2xl p-4 ${STATE_META[s].soft}`}>
-              <p className={`flex items-center gap-2 text-sm font-semibold ${STATE_META[s].text}`}>
-                <StatusDot state={s} /> {STATE_META[s].label}
+          {tiles.map((t) => (
+            <div key={t.state} className={`rounded-2xl p-4 ${STATE_META[t.state].soft}`}>
+              <p className={`flex items-center gap-2 text-sm font-semibold ${STATE_META[t.state].text}`}>
+                <StatusDot state={t.state} /> {t.label}
               </p>
-              <p className="mt-2 font-display text-4xl font-extrabold text-ink">{data.counts[s]}</p>
-              <p className="text-xs text-ink-2">area{data.counts[s] === 1 ? "" : "s"}</p>
+              <p className="mt-2 font-display text-4xl font-extrabold text-ink">{t.total}</p>
+              <p className="text-xs text-ink-2">{t.detail}</p>
             </div>
           ))}
         </div>
+        <GridCard grid={data.grid ?? null} />
         {data.storeKind === "memory" && (
           <p className="mt-3 rounded-xl bg-unsure-soft px-3 py-2 text-xs text-ink-2">Development mode: reports are stored in memory and reset when the server restarts.</p>
         )}
@@ -130,5 +139,34 @@ export function HomeLive({ initial }: { initial: Overview }) {
         </div>
       </section>
     </>
+  );
+}
+
+/** Live official context from NISO. Grid supply to a DisCo is not the same as light on your street. */
+function GridCard({ grid }: { grid: GridContext | null }) {
+  return (
+    <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-semibold"><Zap className="h-4 w-4 text-brand" aria-hidden /> National grid (official, NISO)</p>
+        {grid && (
+          <a href={grid.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-brand">
+            as at {lagosTime(grid.asOf)} <ExternalLink className="h-3 w-3" aria-hidden />
+          </a>
+        )}
+      </div>
+      {grid ? (
+        <>
+          <p className="mt-2 text-sm text-ink">
+            {grid.collapse ? <strong className="text-off">Grid collapse — all Lagos areas marked as confirmed outage. </strong> : null}
+            {/* Each figure carries its own time when it differs from the newest one. */}
+            {grid.discos.map((d) => `${d.name}: ${formatMw(d.mw)} MW${d.asOf !== grid.asOf ? ` (as at ${lagosTime(d.asOf)})` : ""}`).join(" · ")}
+            {grid.totalMw !== null && <span className="text-ink-3"> · all DisCos {formatMw(grid.totalMw)} MW{grid.totalAsOf && grid.totalAsOf !== grid.asOf ? ` (as at ${lagosTime(grid.totalAsOf)})` : ""}</span>}
+          </p>
+          <p className="mt-1 text-xs text-ink-3">Power reaching a DisCo doesn&rsquo;t mean every feeder has light (load shedding). We only use these figures to confirm outages.</p>
+        </>
+      ) : (
+        <p className="mt-2 text-sm text-ink-2">Official grid figures are unavailable or out of date right now, so they aren&rsquo;t being used.</p>
+      )}
+    </div>
   );
 }

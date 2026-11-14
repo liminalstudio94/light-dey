@@ -1,6 +1,13 @@
 # Architecture
 
 ## Overview
+
+**Request flow:** pages (server components) and `/api/status` call `getOverview()`. It loads 24h of community reports, unexpired observations and this hour's patterns, runs `aggregateAreaStatus()` (community rules) and then `resolveAreaStatus()` (evidence engine) for every area. Clients poll `/api/status` every 30 s.
+
+**Report flow:** `ReportPanel` → `POST /api/reports` → `submitReport()` (validation, duplicate, rate limits, location match) → `electricity_reports`.
+
+**Ingestion flow:** GitHub Actions (every 10 min; the run fails if any source errors), a Vercel cron (daily backup) or an `after()` hook on `/api/status` → `refreshDueSources()` → adapters in parallel, each: DB lease with an in-progress lock (even forced runs can't overlap) → fetch with retries under a 30 s deadline → fail-closed parse → idempotent upsert into `observations` (all columns + area links reconciled) → run logged in `source_runs` → lease released. Then hourly `recomputePatterns()` and an atomic `recordSnapshotChanges()` (skipped on the opportunistic path unless a source ran). If evidence tables are missing, pages fall back to community-only status.
+
 Next.js 15 (App Router, TypeScript, Tailwind v4) serves both UI and API. Supabase Postgres stores data in a dedicated `lightdey` schema. Business rules are pure TypeScript in `src/lib`, so they run identically in tests, API routes and server components.
 
 ```
@@ -59,3 +66,23 @@ See `supabase/migrations/`. 13 tables: states, cities, local_government_areas, n
 
 ## Maps
 Leaflet + OpenStreetMap standard tiles (attribution shown). OSM's tile policy suits low traffic only; before launch at scale, switch to a provider with an SLA (MapTiler/Stadia/Mapbox) — LD-028.
+
+## Evidence
+
+`src/lib/evidence.ts`, rules in `EVIDENCE_CONFIG` (`src/lib/config.ts`), sources in `src/lib/sources/registry.ts`. Full source notes: SOURCES.md.
+
+| Map state | Requires | Marker |
+|---|---|---|
+| `CONFIRMED_OFF` / `CONFIRMED_ON` | Official (tier 1): grid collapse, mapped DisCo ≤ 5 MW, or official partner; or 2 verified reporters (or 1 + community) | solid, dark ring |
+| `COMMUNITY_OFF` / `COMMUNITY_ON` | 3+ independent community reporters in 60 min (max 2 per network). A lone verified report stays `UNKNOWN` | solid |
+| `CONFLICTING` | Opposing official, verified, or community evidence | yellow |
+| `ESTIMATED_OFF` / `ESTIMATED_ON` | No fresh reports at all; ≥ 6 past confirmed hours at this hour, ≥ 70% one way | dashed hollow; legacy `state` stays `UNKNOWN` |
+| `UNKNOWN` | Nothing above; explanation says why | grey |
+
+Supersede: only the newest reading per source and measure (DisCo, national total, one partner's report for one area) is considered, so recoveries clear outages at once; future-dated readings are ignored. Grid outage status is derived from MW thresholds, not stored flags.
+
+Expiry: official grid figures 90 min after their own "as at" (NISO publishes about hourly); partner reports 60 min; community 60 min; notices 14 days (context only). Observations with future timestamps are ignored. Every status carries `evidence[]` (source, tier, role, count, time, freshness, link) and an `explanation`.
+
+**Not hard-coded:** no area has a fixed status. Yaba, for example, is unmapped to a DisCo, so only a national collapse, verified reporters or 3 independent neighbours can change it (see the Yaba tests in `tests/unit/evidence.test.ts`).
+
+Tables (migration `20261113010000_evidence.sql`): `sources`, `source_runs`, `observations`, `observation_neighbourhoods`, `disco_service_areas`, `verification_events`, `partner_keys`, `status_snapshots`, `hourly_patterns`.

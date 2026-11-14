@@ -13,12 +13,18 @@ npm run build      # production build
 | history.test.ts | No invented history, light period then outage derived from real reports |
 | search.test.ts | All headline areas findable, prefixes/aliases, unique slugs |
 | components.test.tsx | Status badge labels, area card fields, unconfirmed explanation, share text includes time + confidence |
+| evidence.test.ts | Evidence engine: official precedence and expiry, future/expired observations, DisCo scoping, context-only allocations/notices, official vs community conflict, verified-reporter rules and dedupe, estimates, grid context, **Yaba scenarios** |
+| ingest.test.ts | NISO parser on a real page fixture (Lagos time, Total row, fail-closed on layout change, sum cross-check), outage vs context semantics, Ikeja RSS parsing and name-only matching, retries/backoff, leases, failures write nothing, kill switch, idempotency, snapshots, partner API auth/validation/idempotency, cron auth |
+| integration.test.ts | Real route handlers + store + engine: report flow to COMMUNITY_OFF, duplicate/cross-origin, official observations through `/api/status`, idempotent upserts |
 | security.test.ts | No secrets in client components, server-only guards, no hardcoded keys, RLS on all 13 tables, no public write policy on reports, seed in sync |
 
 ## Manual / browser checks (until LD-020 Playwright)
 Headless Chrome at 390×844 and 1366×900: no horizontal scroll, 41 map markers, list/filter toggles, search → area page, history loads, report submit → thanks, duplicate tap → polite message, no console errors.
 
+## CI
+`.github/workflows/ci.yml` runs typecheck, lint, tests, a seed-sync check (`gen:seed` must not change files) and a build on every PR.
+
 ## Not yet covered
-- Integration tests against real Supabase (LD-010)
+- Automated integration tests against real Postgres (LD-033). Manual DB checks are recorded in PRs.
 - Auth/admin authorization (features not built yet)
 - Notifications (not built yet)

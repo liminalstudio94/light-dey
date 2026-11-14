@@ -1,12 +1,14 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Link2, Share2 } from "lucide-react";
 import { shareText } from "@/lib/share";
 import type { AreaStatus } from "@/lib/types";
 
 export function ShareButtons({ areaName, path, status }: { areaName: string; path: string; status: AreaStatus }) {
   const [copied, setCopied] = useState(false);
-  const url = typeof window === "undefined" ? path : `${window.location.origin}${path}`;
+  // Same markup on server and first client render; the absolute URL is filled in after mount.
+  const [url, setUrl] = useState(`${process.env.NEXT_PUBLIC_SITE_URL ?? ""}${path}`);
+  useEffect(() => setUrl(`${window.location.origin}${path}`), [path]);
   const text = shareText(areaName, status);
   const enc = encodeURIComponent;
   const links = [

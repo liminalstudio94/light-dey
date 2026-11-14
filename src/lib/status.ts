@@ -87,7 +87,8 @@ export function aggregateAreaStatus(
 
   const lastAt = inWindow.length ? Math.max(...inWindow.map((r) => Date.parse(r.createdAt))) : null;
   // Freshness should reflect the newest report even if it has aged out of the window.
-  const allTimes = reports.filter((r) => r.areaId === areaId && r.verification !== "removed").map((r) => Date.parse(r.createdAt)).filter((t) => t <= nowMs);
+  // Flagged and removed reports never count as evidence, not even for "last report" / freshness.
+  const allTimes = reports.filter((r) => r.areaId === areaId && r.verification !== "removed" && r.verification !== "flagged").map((r) => Date.parse(r.createdAt)).filter((t) => t <= nowMs);
   const newestEver = allTimes.length ? Math.max(...allTimes) : null;
   const ageMin = newestEver === null ? null : (nowMs - newestEver) / MIN;
   const freshness = freshnessOf(ageMin, cfg);

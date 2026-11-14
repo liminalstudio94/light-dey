@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { AREAS } from "../areas";
 import { gridContextFrom, lagosHour, resolveAreaStatus } from "../evidence";
 import { historyStats } from "../history";
@@ -28,7 +29,10 @@ export async function evidenceOrEmpty<T>(p: Promise<T[]>, what: string): Promise
   }
 }
 
-export async function getOverview(now = new Date()): Promise<Overview> {
+/** Cached per request, so generateMetadata and the page share one load. */
+export const getOverview = cache(loadOverview);
+
+async function loadOverview(now = new Date()): Promise<Overview> {
   const store = getStore();
   const [reports, stored, patterns] = await Promise.all([
     store.listReports({ since: new Date(now.getTime() - 24 * 3_600_000) }),
