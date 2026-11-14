@@ -271,17 +271,21 @@ export class PostgresStore implements DataStore {
     return rows.length ? { deviceId: rows[0].id, areaId: rows[0].neighbourhood_id, revoked: rows[0].revoked_at !== null } : null;
   }
 
-  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited"> {
+  async recordHeartbeat(h: HeartbeatWrite): Promise<"ok" | "replay" | "rate_limited" | "out_of_order"> {
     return this.sql.begin(async (tx) => {
-      // Row lock serialises heartbeats per device (rate limit + nonce check can't race).
-      const [dev] = await tx<{ last_heartbeat_at: Date | null }[]>`select last_heartbeat_at from lightdey.devices where id = ${h.deviceId} and revoked_at is null for update`;
+      // Row lock serialises heartbeats per device (rate limit, ordering and nonce check can't race).
+      const [dev] = await tx<{ last_heartbeat_at: Date | null; last_device_ts: Date | null }[]>`select last_heartbeat_at, last_device_ts from lightdey.devices where id = ${h.deviceId} and revoked_at is null for update`;
       if (!dev) return "replay"; // revoked between lookup and write: treat as rejected
       if (dev.last_heartbeat_at && h.receivedAt.getTime() - dev.last_heartbeat_at.getTime() < h.minIntervalSeconds * 1000) return "rate_limited";
       const nonce = await tx`insert into lightdey.sensor_nonces (device_id, nonce, seen_at) values (${h.deviceId}, ${h.nonce}, ${h.receivedAt}) on conflict do nothing returning nonce`;
       if (!nonce.length) return "replay";
+      // A held-back older reading must never overwrite a newer one.
+      if (dev.last_device_ts && h.deviceTs.getTime() <= dev.last_device_ts.getTime()) return "out_of_order";
       await tx`insert into lightdey.sensor_heartbeats (device_id, received_at, device_ts, mains, power_source, battery_pct, self_test, firmware, network_hash)
                values (${h.deviceId}, ${h.receivedAt}, ${h.deviceTs}, ${h.mains}, ${h.powerSource}, ${h.batteryPct}, ${h.selfTest}, ${h.firmware}, ${h.networkHash})`;
-      await tx`update lightdey.devices set last_heartbeat_at = ${h.receivedAt}, last_mains = ${h.mains}, last_power_source = ${h.powerSource},
+      // Freshness uses the EARLIER of device and server time, so a delayed message can't look current.
+      const observed = new Date(Math.min(h.receivedAt.getTime(), h.deviceTs.getTime()));
+      await tx`update lightdey.devices set last_heartbeat_at = ${observed}, last_device_ts = ${h.deviceTs}, last_mains = ${h.mains}, last_power_source = ${h.powerSource},
                  last_battery_pct = ${h.batteryPct}, last_clock_skew_s = ${h.clockSkewS}, last_self_test = ${h.selfTest}, last_firmware = ${h.firmware},
                  last_network_hash = ${h.networkHash}
                where id = ${h.deviceId}`;

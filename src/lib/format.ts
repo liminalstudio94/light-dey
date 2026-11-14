@@ -54,3 +54,20 @@ export const TIER_LABEL: Record<1 | 2 | 3 | 4, string> = { 1: "Official", 2: "Ve
 const MW = new Intl.NumberFormat("en-NG", { maximumFractionDigits: 0 });
 /** Same output on server and in every browser locale (avoids hydration mismatches). */
 export const formatMw = (mw: number) => MW.format(Math.round(mw));
+
+/** Labels by how evidence was obtained (a sensor is "Measured", never "Official"). */
+export const EVIDENCE_TYPE_LABEL: Record<import("./types").EvidenceType, string> = {
+  measured: "Measured",
+  official: "Official",
+  reported: "Reported",
+  estimated: "Estimated",
+  proxy: "Weak proxy",
+};
+/** What `count` counts for each evidence type. */
+export const EVIDENCE_COUNT_NOUN: Record<import("./types").EvidenceType, string> = {
+  measured: "sensors",
+  official: "readings",
+  reported: "independent reports",
+  estimated: "hours of data",
+  proxy: "signals",
+};

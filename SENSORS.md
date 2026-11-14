@@ -46,6 +46,7 @@ X-LightDey-Signature: v1=<hex HMAC-SHA256(deviceSecret, rawBody)>
 | Signature | `v1=` HMAC of the exact raw body, timing-safe compare | 401 (generic) |
 | Clock | `ts` within ±300 s of server time | 401 `stale` |
 | Replay | `(deviceId, nonce)` accepted once (kept ≥ 1 h) | 409 `replay` |
+| Order | `ts` must be newer than the last accepted heartbeat's `ts` | 409 `out_of_order` |
 | Rate | ≥ 20 s between accepted heartbeats per device | 429 |
 | OK | stored + device state updated atomically | **202** |
 
@@ -55,7 +56,7 @@ Recommended cadence: every 60 s; on mains loss send immediately (a "last gasp" f
 
 ### MQTT (designed, not deployed)
 
-Vercel functions can't hold MQTT connections, so MQTT is a **bridge**: devices publish to `lightdey/v1/<deviceId>/heartbeat` with the **same signed JSON payload**; a small bridge (any MQTT broker + a forwarder) POSTs each message unchanged to `/api/sensors/heartbeat`. Because the signature covers the body, the bridge needs no secrets and can't forge readings. Not built yet (LD-073).
+Vercel functions can't hold MQTT connections, so MQTT is a **bridge**: devices publish to `lightdey/v1/<deviceId>/heartbeat` with the **same signed JSON payload**; a small bridge (any MQTT broker + a forwarder) POSTs each message unchanged to `/api/sensors/heartbeat`. Because the signature covers the body, the bridge needs no secrets and can't forge readings; it can delay messages but not reorder them (older `ts` ⇒ rejected), and a delayed message never looks fresher than its device timestamp. Not built yet (LD-073).
 
 ## Privacy
 

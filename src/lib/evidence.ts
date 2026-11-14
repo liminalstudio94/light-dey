@@ -350,7 +350,9 @@ export function resolveAreaStatus({ community, observations, sensors = [], patte
   }
 
   // ---- 4. Estimate from history — only when there are no fresh reports or sensor readings ----
-  const est = community.recentReports === 0 && live.length === 0 ? estimateFrom(pattern, cfg, now) : null;
+  // Only sensors that say something about the GRID suppress a prediction; a sensor after a changeover
+  // that has power (could be the generator) is context, not grid evidence.
+  const est = community.recentReports === 0 && strongSensors.length + weakSensors.length === 0 ? estimateFrom(pattern, cfg, now) : null;
   const pending = communityItem(community.leaning ? "supporting" : "context");
   if (pending) evidence.push(pending);
   if (est) {
@@ -374,7 +376,9 @@ export function resolveAreaStatus({ community, observations, sensors = [], patte
   const why =
     community.recentReports > 0
       ? `Not enough current evidence: ${community.leaning ? `${community.leaning === "on" ? community.onReporters : community.offReporters} of ${K()} needed people say ${word(community.leaning)}` : "recent reports don't agree yet"}.`
-      : mySensors.length && !live.length
+      : ambiguous.length && !strongSensors.length && !weakSensors.length
+        ? "Not enough current evidence: the only working sensor here is after a generator changeover and has power — that could be the generator, so it says nothing about the grid."
+        : mySensors.length && !live.length
         ? "Not enough current evidence: the sensors here are offline, and silence isn't an outage."
         : community.freshness === "stale"
           ? "Not enough current evidence: the last reports are over an hour old, so they no longer count as live."

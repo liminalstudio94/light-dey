@@ -288,3 +288,56 @@ describe("reference Python client (#7, #10)", () => {
     expect(src).toMatch(/--device-supply/);
   });
 });
+
+describe("Qodo pass 5 on PR #5", () => {
+  const ID = "ldd_TESTDEVICE00000002";
+  const fresh = () => {
+    resetGuard();
+    const store = new MemoryStore();
+    store.devices.set(ID, { deviceId: ID, areaId: "yaba", provider: "light_dey_v1", supplyPoint: "grid_direct", lastHeartbeatAt: null, mains: null, powerSource: null, batteryPct: null, clockSkewS: null, selfTest: null, networkHash: null, revoked: false });
+    return store;
+  };
+  const hb = (tsSec: number, mains: "on" | "off", nonce: string) => JSON.stringify({ v: 1, deviceId: ID, ts: tsSec, nonce, mains, powerSource: "ups" });
+  const sign = (b: string) => signBody(b, deviceSecret(ID));
+
+  it("a held-back older heartbeat can't overwrite a newer one (#5)", async () => {
+    const store = fresh();
+    const t = Math.floor(T / 1000);
+    const newer = hb(t, "off", "nonce-newer-0000000001");
+    const older = hb(t - 60, "on", "nonce-older-0000000001");
+    expect(await ingestHeartbeat(store, newer, sign(newer), "net", NOW)).toEqual({ ok: true });
+    const later = new Date(T + 30_000);
+    expect(await ingestHeartbeat(store, older, sign(older), "net", later)).toMatchObject({ status: 409, code: "out_of_order" });
+    expect(store.devices.get(ID)?.mains).toBe("off");
+  });
+  it("a delayed message never looks fresher than its device time (#5)", async () => {
+    const store = fresh();
+    const t = Math.floor(T / 1000) - 200; // device clock 200 s behind
+    const b = hb(t, "off", "nonce-delayed-00000001");
+    await ingestHeartbeat(store, b, sign(b), "net", NOW);
+    expect(store.devices.get(ID)?.lastHeartbeatAt).toBe(new Date(t * 1000).toISOString());
+  });
+  it("an ambiguous (after-changeover, has power) sensor neither hides the prediction nor gets a false explanation (#6)", () => {
+    const amb = sensor("agege", "on", { supplyPoint: "after_changeover", powerSource: "generator" });
+    const withPattern = resolveAreaStatus({ community: aggregateAreaStatus("agege", [], NOW), observations: [], sensors: [amb], pattern: { areaId: "agege", hour: 13, lightHours: 9, knownHours: 10, computedAt: NOW.toISOString() }, now: NOW });
+    expect(withPattern.mapState).toBe("ESTIMATED_ON");
+    const none = resolve("agege", [amb]);
+    expect(none.mapState).toBe("UNKNOWN");
+    expect(none.explanation).toMatch(/only working sensor here is after a generator changeover and has power/);
+  });
+  it("rejects IODA events with a missing, null or non-numeric score (#4)", () => {
+    const ev = (score: unknown) => JSON.stringify({ type: "outages.events", data: [{ location: "region/2935", start: 1, duration: 60, datasource: "bgp", score }] });
+    for (const bad of [undefined, null, "high", Number.NaN]) expect(() => parseIodaEvents(ev(bad))).toThrow(/score/);
+    expect(parseIodaEvents(ev(12.5))).toHaveLength(1);
+  });
+  it("sensor changes reach the timeline without any source adapter running (#1)", async () => {
+    const { snapshotIfDue } = await import("@/lib/server/refresh");
+    const store = fresh();
+    (globalThis as unknown as { __lightDeyStore?: MemoryStore }).__lightDeyStore = store;
+    const b = hb(Math.floor(Date.now() / 1000), "off", "nonce-snapshot-0000001");
+    await ingestHeartbeat(store, b, sign(b), "net", new Date());
+    expect(await snapshotIfDue()).toBe(41);
+    expect((await store.listSnapshots("yaba", new Date(0)))[0].mapState).toBe("CONFIRMED_OFF");
+    expect(await snapshotIfDue()).toBe("skipped"); // lease-limited
+  });
+});

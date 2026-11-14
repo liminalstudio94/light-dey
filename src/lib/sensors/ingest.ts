@@ -49,6 +49,7 @@ export async function ingestHeartbeat(store: DataStore, rawBody: string, signatu
     minIntervalSeconds: SENSOR_CONFIG.minIntervalSeconds,
   });
   if (r === "replay") return { ok: false, status: 409, code: "replay", message: "Nonce already used" };
+  if (r === "out_of_order") return { ok: false, status: 409, code: "out_of_order", message: "Older than the last accepted heartbeat" };
   if (r === "rate_limited") return { ok: false, status: 429, code: "rate_limited", message: `At most one heartbeat every ${SENSOR_CONFIG.minIntervalSeconds} s` };
   return { ok: true };
 }

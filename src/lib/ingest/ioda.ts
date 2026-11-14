@@ -25,6 +25,7 @@ export function parseIodaEvents(json: string): IodaEvent[] {
   return d.data.map((e) => {
     const x = e as Partial<IodaEvent>;
     if (x.location !== `region/${IODA_REGION}` || !Number.isFinite(x.start) || !Number.isFinite(x.duration) || typeof x.datasource !== "string") throw new Error("IODA: malformed event");
+    if (typeof x.score !== "number" || !Number.isFinite(x.score)) throw new Error("IODA: event score missing or not a finite number");
     return x as IodaEvent;
   });
 }
