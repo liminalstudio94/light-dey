@@ -1,5 +1,6 @@
 import { SENSOR_CONFIG } from "../config";
 import type { DataStore } from "../store/types";
+import { isKnownUnknown, rememberUnknown } from "./guard";
 import { MAX_BODY_BYTES, deviceSecret, heartbeatSchema, verifySignature } from "./protocol";
 
 export type HeartbeatResult = { ok: true } | { ok: false; status: number; code: string; message: string };
@@ -21,8 +22,13 @@ export async function ingestHeartbeat(store: DataStore, rawBody: string, signatu
   if (!parsed.success) return { ok: false, status: 400, code: "invalid", message: parsed.error.issues[0]?.message ?? "Invalid heartbeat" };
   const hb = parsed.data;
 
+  // Unknown ids seen recently are answered from memory — repeated junk never reaches the database.
+  if (isKnownUnknown(hb.deviceId, now.getTime())) return deny;
   const device = await store.getDevice(hb.deviceId);
-  if (!device || device.revoked) return deny;
+  if (!device || device.revoked) {
+    rememberUnknown(hb.deviceId, now.getTime());
+    return deny;
+  }
   if (!verifySignature(rawBody, signature, deviceSecret(hb.deviceId))) return deny;
 
   const skew = Math.round(now.getTime() / 1000 - hb.ts);

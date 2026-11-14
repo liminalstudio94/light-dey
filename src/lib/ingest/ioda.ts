@@ -42,9 +42,11 @@ export function iodaObservations(events: IodaEvent[], now: Date = new Date()): N
       kind: "connectivity" as const,
       status: null, // never a status claim
       valueNum: Math.round(e.score),
-      title: `Lagos-wide internet connectivity drop (IODA, ${e.datasource}) — weak signal: generators and batteries keep networks up, and internet fails for other reasons.`,
+      title: `Lagos-wide internet connectivity drop since ${new Date(e.start * 1000).toISOString().slice(11, 16)} UTC (IODA, ${e.datasource}) — weak signal: generators and batteries keep networks up, and internet fails for other reasons.`,
       url: "https://ioda.inetintel.cc.gatech.edu/region/2935",
-      observedAt: new Date(e.start * 1000).toISOString(),
+      // Observed now (it is still ongoing); the start time lives in the title/payload, so long outages don't age out.
+      observedAt: new Date(Math.min(t, e.start + e.duration) * 1000).toISOString(),
+      payload: { start: e.start, duration: e.duration },
       validUntil: new Date((Math.max(e.start + e.duration, t) + 20 * 60) * 1000).toISOString(),
       neighbourhoodIds: [],
     }));

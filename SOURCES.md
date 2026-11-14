@@ -68,7 +68,7 @@ See **SENSORS.md** for the protocol, security, privacy and setup. Status: implem
    # verified individual — one person = one source = one active key, one home area:
    npm run partner:key -- --id verified:ada-yaba --name "Ada (Yaba)" --kind verified_reporter --tier 2 --coverage "Yaba" --areas yaba
    ```
-   The key is printed once; only its SHA-256 hash is stored. Revoke with `npm run partner:key -- --revoke <key-id>`.
+   The key is printed once; only its SHA-256 hash is stored. Revoke with `npm run partner:key -- --revoke <key-id>` — this also **withdraws every live claim made with that key** (audited as `removed`). Switch a whole partner off with `npm run partner:key -- --deactivate <source-id>`; issuing a new key reactivates it.
 2. The partner sends:
    ```http
    POST /api/ingest/observations

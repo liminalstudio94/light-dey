@@ -7,6 +7,7 @@ import { EVIDENCE_CONFIG } from "@/lib/config";
 import { resolveAreaStatus } from "@/lib/evidence";
 import { iodaObservations, parseIodaEvents } from "@/lib/ingest/ioda";
 import { ADAPTERS, runAdapter } from "@/lib/ingest/runner";
+import { allowNetwork, isKnownUnknown, readBodyLimited, resetGuard } from "@/lib/sensors/guard";
 import { deviceHealth, type DeviceRow } from "@/lib/sensors/health";
 import { ingestHeartbeat } from "@/lib/sensors/ingest";
 import { deviceSecret, signBody } from "@/lib/sensors/protocol";
@@ -139,6 +140,7 @@ describe("heartbeat protocol (signed, replay- and rate-limited)", () => {
   const ID = "ldd_TESTDEVICE00000001";
   let store: MemoryStore;
   beforeEach(() => {
+    resetGuard();
     store = new MemoryStore();
     store.devices.set(ID, { deviceId: ID, areaId: "yaba", provider: "light_dey_v1", supplyPoint: "grid_direct", lastHeartbeatAt: null, mains: null, powerSource: null, batteryPct: null, clockSkewS: null, selfTest: null, networkHash: null, revoked: false });
   });
@@ -230,5 +232,59 @@ describe("status timeline", () => {
     expect(t.map((x) => x.mapState)).toEqual(["CONFIRMED_OFF", "UNKNOWN"]);
     expect(t[0].basis).toBe("Light Dey sensors: 1 healthy sensor measures no grid power");
     void EVIDENCE_CONFIG;
+  });
+});
+
+describe("Qodo pass 4 on PR #5", () => {
+  it("long IODA outages stay current while ongoing (#11)", () => {
+    const start = Math.floor(T / 1000) - 3 * 3600; // began 3 h ago, still going
+    const [o] = iodaObservations([{ location: "region/2935", start, duration: 4 * 3600, datasource: "ping-slash24", score: 1 }], NOW);
+    expect(o.observedAt).toBe(NOW.toISOString());
+    expect(o.title).toMatch(/since \d\d:\d\d UTC/);
+  });
+  it("unknown device ids are cached and the network bucket limits floods before the DB (#9)", async () => {
+    resetGuard();
+    const store = new MemoryStore();
+    let lookups = 0;
+    const orig = store.getDevice.bind(store);
+    store.getDevice = async (id) => (lookups++, orig(id));
+    const b = JSON.stringify({ v: 1, deviceId: "ldd_NOSUCHDEVICE000000X", ts: Math.floor(T / 1000), nonce: "nonce-aaaaaaaaaaaaaaaa", mains: "off", powerSource: "ups" });
+    for (let i = 0; i < 5; i++) await ingestHeartbeat(store, b, "v1=" + "0".repeat(64), "net", NOW);
+    expect(lookups).toBe(1);
+    expect(isKnownUnknown("ldd_NOSUCHDEVICE000000X", T)).toBe(true);
+    let allowed = 0;
+    for (let i = 0; i < 100; i++) if (allowNetwork("flood", T)) allowed++;
+    expect(allowed).toBe(30);
+  });
+  it("the body budget is enforced while streaming (#8)", async () => {
+    const big = new Blob(["x".repeat(10_000)]).stream();
+    expect(await readBodyLimited(big, 2048)).toBeNull();
+    expect(await readBodyLimited(new Blob(["{}"]).stream(), 2048)).toBe("{}");
+    const res = await heartbeatRoute(new NextRequest("http://localhost/api/sensors/heartbeat", { method: "POST", body: "x".repeat(5000), headers: { "content-type": "application/json", "content-length": "5000" } }));
+    expect(res.status).toBe(413);
+  });
+  it("prune uses the configured retention (#13)", async () => {
+    const { SENSOR_CONFIG } = await import("@/lib/config");
+    expect(SENSOR_CONFIG.nonceTtlMinutes).toBe(60);
+    const store = new MemoryStore();
+    store.heartbeats.push({ receivedAt: new Date(T - (SENSOR_CONFIG.heartbeatRetentionDays + 1) * 86_400_000) } as never, { receivedAt: new Date(T - 3_600_000) } as never);
+    expect((await store.pruneSensorData(NOW)).heartbeats).toBe(1);
+  });
+});
+
+describe("reference Python client (#7, #10)", () => {
+  it("survives a network failure (exit 1 with a message, no traceback) and never infers its own power source", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync("python3", ["-I", "scripts/sensor/light_dey_sensor.py", "--url", "http://127.0.0.1:9", "--test-mains", "off", "--once"], {
+      env: { ...process.env, LIGHTDEY_DEVICE_ID: "ldd_TESTDEVICE00000001", LIGHTDEY_DEVICE_SECRET: "s" },
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/network error/);
+    expect(r.stderr).not.toMatch(/Traceback/);
+    const src = readFileSync("scripts/sensor/light_dey_sensor.py", "utf8");
+    expect(src).not.toMatch(/def power_source/);
+    expect(src).toMatch(/--device-supply/);
   });
 });

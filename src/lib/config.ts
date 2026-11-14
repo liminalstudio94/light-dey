@@ -75,8 +75,8 @@ export const SENSOR_CONFIG = {
   degradedClockSkewSeconds: 120,
   /** Minimum gap between accepted heartbeats from one device. */
   minIntervalSeconds: 20,
-  /** Nonces are remembered at least this long. */
-  nonceTtlMinutes: 15,
+  /** Nonces are remembered at least this long (must exceed 2 × maxClockSkewSeconds). */
+  nonceTtlMinutes: 60,
   /** Battery below this (while not on grid) marks the device degraded. */
   lowBatteryPct: 20,
   /** Raw heartbeats older than this are pruned. */
