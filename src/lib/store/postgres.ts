@@ -77,18 +77,28 @@ export class PostgresStore implements DataStore {
   // ---------- Evidence ----------
 
   async listObservations(now: Date): Promise<Observation[]> {
+    // Latest unexpired reading per (source, kind, scope, area) plus every unexpired notice.
+    // No global row cap: older-but-valid evidence for quiet areas must never be dropped.
     const rows = await this.sql<
       { id: string; source_id: string; external_id: string; scope: Observation["scope"]; scope_ref: string | null; kind: Observation["kind"]; status: Observation["status"]; value_num: number | null; title: string | null; url: string | null; observed_at: Date; valid_until: Date; tier: number; areas: string[] | null }[]
     >`
+      with candidates as (
+        select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
+        from lightdey.observations
+        where valid_until >= ${now} and kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes'
+        order by source_id, kind, scope, coalesce(scope_ref, ''), observed_at desc
+      ), picked as (
+        select * from candidates
+        union all
+        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
+      )
       select o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until,
              s.trust_tier as tier, array_remove(array_agg(onb.neighbourhood_id), null) as areas
-      from lightdey.observations o
+      from picked o
       join lightdey.sources s on s.id = o.source_id and s.is_active
       left join lightdey.observation_neighbourhoods onb on onb.observation_id = o.id
-      where o.valid_until >= ${now}
-      group by o.id, s.trust_tier
-      order by o.observed_at desc
-      limit 2000`;
+      group by o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until, s.trust_tier
+      order by o.observed_at desc`;
     return rows.map((r) => ({
       id: r.id,
       sourceId: r.source_id,
@@ -111,21 +121,28 @@ export class PostgresStore implements DataStore {
     let written = 0;
     for (const r of rows) {
       await this.sql.begin(async (tx) => {
-        const res = await tx<{ id: string }[]>`
-          insert into lightdey.observations (source_id, external_id, scope, scope_ref, kind, status, value_num, title, url, observed_at, valid_until, payload)
+        // Every mutable column takes part in change detection, so corrections are never discarded.
+        const changed = await tx<{ id: string }[]>`
+          insert into lightdey.observations as o_old (source_id, external_id, scope, scope_ref, kind, status, value_num, title, url, observed_at, valid_until, payload)
           values (${r.sourceId}, ${r.externalId}, ${r.scope}, ${r.scopeRef}, ${r.kind}, ${r.status}, ${r.valueNum}, ${r.title}, ${r.url}, ${r.observedAt}, ${r.validUntil}, ${tx.json((r.payload ?? {}) as postgres.JSONValue)})
           on conflict (source_id, external_id) do update set
-            status = excluded.status, value_num = excluded.value_num, title = excluded.title, url = excluded.url,
-            observed_at = excluded.observed_at, valid_until = excluded.valid_until, payload = excluded.payload, fetched_at = now()
-          where (lightdey.observations.status, lightdey.observations.value_num, lightdey.observations.title, lightdey.observations.valid_until)
-                is distinct from (excluded.status, excluded.value_num, excluded.title, excluded.valid_until)
+            scope = excluded.scope, scope_ref = excluded.scope_ref, kind = excluded.kind, status = excluded.status, value_num = excluded.value_num,
+            title = excluded.title, url = excluded.url, observed_at = excluded.observed_at, valid_until = excluded.valid_until,
+            payload = excluded.payload, fetched_at = now()
+          where (o_old.scope, o_old.scope_ref, o_old.kind, o_old.status, o_old.value_num, o_old.title, o_old.url, o_old.observed_at, o_old.valid_until, o_old.payload)
+                is distinct from
+                (excluded.scope, excluded.scope_ref, excluded.kind, excluded.status, excluded.value_num, excluded.title, excluded.url, excluded.observed_at, excluded.valid_until, excluded.payload)
           returning id`;
-        if (!res.length) return;
-        written++;
-        if (r.neighbourhoodIds.length) {
-          await tx`delete from lightdey.observation_neighbourhoods where observation_id = ${res[0].id}`;
-          await tx`insert into lightdey.observation_neighbourhoods ${tx(r.neighbourhoodIds.map((n) => ({ observation_id: res[0].id, neighbourhood_id: n })))} on conflict do nothing`;
+        const [{ id }] = changed.length ? changed : await tx<{ id: string }[]>`select id from lightdey.observations where source_id = ${r.sourceId} and external_id = ${r.externalId}`;
+        // Always reconcile area links (including clearing them), and count a link change as a write.
+        const current = (await tx<{ n: string }[]>`select neighbourhood_id as n from lightdey.observation_neighbourhoods where observation_id = ${id}`).map((x) => x.n).sort();
+        const wanted = [...new Set(r.neighbourhoodIds)].sort();
+        const linksChanged = current.join(",") !== wanted.join(",");
+        if (linksChanged) {
+          await tx`delete from lightdey.observation_neighbourhoods where observation_id = ${id}`;
+          if (wanted.length) await tx`insert into lightdey.observation_neighbourhoods ${tx(wanted.map((n) => ({ observation_id: id, neighbourhood_id: n })))}`;
         }
+        if (changed.length || linksChanged) written++;
       });
     }
     return written;

@@ -125,7 +125,7 @@ export const SOURCES: SourceMeta[] = [
     integration: "awaiting_partner",
     active: false,
     usage: "Neighbourhood status reports via the ingestion API.",
-    notes: "No reporters verified yet. Account-based verification arrives with sign-in (LD-014).",
+    notes: "No reporters verified yet. Each vetted person gets their own source (verified:<slug>) so independent reporters are counted separately; this row is the public label and never holds keys. Account-based verification arrives with sign-in (LD-014).",
   },
   {
     id: "community",

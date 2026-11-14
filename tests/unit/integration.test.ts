@@ -56,10 +56,41 @@ describe("API integration (route handlers + store + engine)", () => {
     expect(o.mapCounts?.CONFIRMED_OFF).toBe(7); // the 7 officially mapped Eko areas
   });
 
+  it("serves community-only status if the evidence tables are missing (Qodo #2-1)", async () => {
+    const missing = Object.assign(new Error('relation "lightdey.observations" does not exist'), { code: "42P01" });
+    store.listObservations = async () => {
+      throw missing;
+    };
+    store.listHourPatterns = async () => {
+      throw missing;
+    };
+    await send({ areaId: "yaba", status: "off" }, uid(1), "1.1.1.1");
+    const res = await getStatus();
+    expect(res.status).toBe(200);
+    const o = (await res.json()) as Overview;
+    expect(area(o, "yaba").offReporters).toBe(1);
+    expect(o.grid).toBeNull();
+  });
+
+  it("other database errors still fail loudly", async () => {
+    store.listObservations = async () => {
+      throw Object.assign(new Error("connection reset"), { code: "08006" });
+    };
+    expect((await getStatus()).status).toBe(500);
+  });
+
   it("observation upserts are idempotent", async () => {
     const row = { sourceId: "niso_niggrid", externalId: "x", scope: "national" as const, scopeRef: null, kind: "grid_total" as const, status: null, valueNum: 3000, title: null, url: null, observedAt: new Date().toISOString(), validUntil: new Date(Date.now() + 60_000).toISOString(), neighbourhoodIds: [] };
     expect(await store.upsertObservations([row])).toBe(1);
     expect(await store.upsertObservations([row])).toBe(0);
     expect(store.observations).toHaveLength(1);
+  });
+
+  it("upserts apply corrections and link changes, including removing all links (Qodo #2-11)", async () => {
+    const base = { sourceId: "ikeja_electric_notices", externalId: "n1", scope: "disco" as const, scopeRef: "ikeja", kind: "notice" as const, status: null, valueNum: null, title: "Old title", url: "https://www.ikejaelectric.com/a", observedAt: new Date().toISOString(), validUntil: new Date(Date.now() + 86_400_000).toISOString(), neighbourhoodIds: ["shomolu", "ikeja"] };
+    await store.upsertObservations([base]);
+    expect(await store.upsertObservations([{ ...base, url: "https://www.ikejaelectric.com/b" }])).toBe(1);
+    expect(await store.upsertObservations([{ ...base, url: "https://www.ikejaelectric.com/b", neighbourhoodIds: [] }])).toBe(1);
+    expect(store.observations[0]).toMatchObject({ url: "https://www.ikejaelectric.com/b", neighbourhoodIds: [] });
   });
 });

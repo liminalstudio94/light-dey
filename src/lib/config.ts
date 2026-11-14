@@ -39,8 +39,12 @@ export type StatusConfig = typeof STATUS_CONFIG;
 
 /** Evidence engine rules (see ARCHITECTURE.md#evidence). */
 export const EVIDENCE_CONFIG = {
-  /** Official grid/DisCo figures older than this are ignored. */
-  officialMaxAgeMinutes: 45,
+  /**
+   * Official grid/DisCo figures older than this are ignored. NISO publishes roughly
+   * hourly, so this must exceed the cadence plus fetch lag; recoveries still show
+   * immediately because a newer reading supersedes an older one.
+   */
+  officialMaxAgeMinutes: 90,
   /** A DisCo allocated at or below this many MW is treated as getting no grid supply. */
   discoOutageMaxMw: 5,
   /** National total DisCo allocation at or below this many MW is treated as a grid collapse. */

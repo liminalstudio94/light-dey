@@ -9,7 +9,12 @@ const MIN = 60_000;
 type Cfg = typeof EVIDENCE_CONFIG;
 
 const ageMin = (iso: string, now: number) => (now - Date.parse(iso)) / MIN;
-const sourceName = (o: Observation) => getSource(o.sourceId)?.shortName ?? o.sourceId;
+/** Public label. Partner / verified-reporter source ids are internal (they can name a person), so never show them. */
+export const sourceName = (o: Pick<Observation, "sourceId" | "tier">) =>
+  getSource(o.sourceId)?.shortName ?? (o.tier === 2 ? "Verified reporter" : o.tier === 1 ? "Approved partner" : "Other source");
+const K = () => STATUS_CONFIG.confirmationThreshold;
+/** Public id for an evidence item: per-partner / per-reporter source ids stay server-side. */
+const publicSourceId = (o: Pick<Observation, "sourceId" | "tier">) => (getSource(o.sourceId) ? o.sourceId : o.tier === 2 ? "verified_reporters" : "partner_feed");
 
 /** Is this observation usable right now? Checks both its own expiry and our max age, and rejects future timestamps. */
 export function isActive(o: Observation, now: number, cfg: Cfg = EVIDENCE_CONFIG): boolean {
@@ -25,6 +30,38 @@ export function appliesTo(o: Observation, areaId: string): boolean {
   if (o.scope === "national") return getArea(areaId)?.state === "Lagos";
   if (o.scope === "disco") return discoOf(areaId)?.disco === o.scopeRef;
   return o.scopeRef === areaId || o.neighbourhoodIds.includes(areaId);
+}
+
+/**
+ * Grid figures assert an outage only by their value, never by a stored flag:
+ * national total <= gridCollapseMaxMw or DisCo <= discoOutageMaxMw => "off";
+ * anything else is context (null). Grid data never asserts "on".
+ */
+export function normalizeGrid(o: Observation, cfg: Cfg = EVIDENCE_CONFIG): Observation {
+  if (o.kind !== "grid_total" && o.kind !== "disco_allocation") return o;
+  const limit = o.kind === "grid_total" ? cfg.gridCollapseMaxMw : cfg.discoOutageMaxMw;
+  const status = o.valueNum !== null && Number.isFinite(o.valueNum) && o.valueNum >= 0 && o.valueNum <= limit ? "off" : null;
+  return status === o.status ? o : { ...o, status };
+}
+
+/**
+ * Keeps only the newest reading of each thing a source measures (a DisCo, the
+ * national total, one partner's report for one area). A newer positive reading
+ * therefore supersedes an older outage. Notices are independent items and all kept.
+ */
+export function latestPerMeasure(observations: Observation[]): Observation[] {
+  const latest = new Map<string, Observation>();
+  const notices: Observation[] = [];
+  for (const o of observations) {
+    if (o.kind === "notice") {
+      notices.push(o);
+      continue;
+    }
+    const key = `${o.sourceId}|${o.kind}|${o.scope}|${o.scopeRef ?? ""}`;
+    const prev = latest.get(key);
+    if (!prev || Date.parse(o.observedAt) > Date.parse(prev.observedAt)) latest.set(key, o);
+  }
+  return [...latest.values(), ...notices];
 }
 
 export function lagosHour(now: number): number {
@@ -77,22 +114,25 @@ export interface EvidenceInput {
  *  1. Official evidence (tier 1): grid collapse, a mapped DisCo at ~0 MW, or an
  *     approved official partner's neighbourhood report => CONFIRMED_*.
  *     Opposing official evidence => CONFLICTING.
- *  2. Verified reporters (tier 2): 2+ independent agreeing, or 1 agreeing with
- *     a community-confirmed status => CONFIRMED_*. A lone verified report is
- *     shown as COMMUNITY_* (reported, not confirmed). Disagreement => CONFLICTING.
+ *  2. Verified reporters (tier 2; one source per vetted person): 2+ agreeing,
+ *     or 1 agreeing with a community-confirmed status => CONFIRMED_*. A lone
+ *     verified report is not confirmation: UNKNOWN with the reason. Disagreement => CONFLICTING.
  *  3. Community (tier 3): 3+ independent reporters => COMMUNITY_*; mixed => CONFLICTING.
- *  4. History (tier 4): strong hour-of-day pattern => ESTIMATED_* (never live).
+ *  4. History (tier 4), only when there are no fresh reports at all => ESTIMATED_* (never live).
  *  5. Otherwise UNKNOWN, with the reason.
  */
 export function resolveAreaStatus({ community, observations, pattern, now: nowDate = new Date(), cfg = EVIDENCE_CONFIG }: EvidenceInput): AreaStatus {
   const now = nowDate.getTime();
   const areaId = community.areaId;
   const area = getArea(areaId);
-  const relevant = observations.filter((o) => appliesTo(o, areaId) && isActive(o, now, cfg));
+  // Newest reading per measure first (so recoveries supersede outages), then scope and freshness.
+  // Future-dated readings can't supersede real ones, so drop them before picking the newest.
+  const plausible = observations.filter((o) => Date.parse(o.observedAt) <= now + 2 * MIN);
+  const relevant = latestPerMeasure(plausible.map((o) => normalizeGrid(o, cfg))).filter((o) => appliesTo(o, areaId) && isActive(o, now, cfg));
   const evidence: EvidenceItem[] = [];
 
   const item = (o: Observation, role: EvidenceItem["role"], summary = officialSummary(o)): EvidenceItem => ({
-    sourceId: o.sourceId,
+    sourceId: publicSourceId(o),
     sourceName: sourceName(o),
     tier: o.tier,
     role,
@@ -169,13 +209,9 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     );
   }
 
-  // 2. Verified reporters / non-official partners (tier 2): latest per source.
-  const latestBySource = new Map<string, Observation>();
-  for (const o of relevant.filter((x) => x.tier === 2 && x.kind === "status_report" && x.status)) {
-    const prev = latestBySource.get(o.sourceId);
-    if (!prev || Date.parse(o.observedAt) > Date.parse(prev.observedAt)) latestBySource.set(o.sourceId, o);
-  }
-  const verified = [...latestBySource.values()];
+  // 2. Verified reporters (tier 2). Each vetted person is their own source (scripts/partner-key.mjs
+  //    issues one source per reporter), and relevant already holds only their latest report here.
+  const verified = relevant.filter((x) => x.tier === 2 && x.kind === "status_report" && x.status);
   const vOn = verified.filter((o) => o.status === "on");
   const vOff = verified.filter((o) => o.status === "off");
   if (verified.length) {
@@ -199,7 +235,9 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     if (agree.length >= cfg.verifiedConfirmCount || communityConfirmed === s) {
       return finish(s === "on" ? "CONFIRMED_ON" : "CONFIRMED_OFF", agree.length >= cfg.verifiedConfirmCount && communityConfirmed === s ? "high" : "medium", `Confirmed by ${agree.length} verified reporter${agree.length > 1 ? "s" : ""}${communityConfirmed === s ? " and neighbours" : ""}.`);
     }
-    return finish(s === "on" ? "COMMUNITY_ON" : "COMMUNITY_OFF", "low", "One verified reporter so far — not yet confirmed.");
+    // A single report — even a verified one — is never shown as an established status.
+    if (community.state === "UNCERTAIN") return finish("CONFLICTING", "low", "Recent reports disagree.");
+    return finish("UNKNOWN", "low", `Not enough verified data: 1 verified reporter says ${word(s)}. A second verified reporter or ${K()} neighbours would confirm it.`);
   }
 
   // 3. Community
@@ -209,11 +247,11 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
   }
   if (community.state === "UNCERTAIN") {
     evidence.push(communityItem("conflicting")!);
-    return finish("CONFLICTING", "low", "Recent reports disagree and neither side has 3 independent confirmations.");
+    return finish("CONFLICTING", "low", `Recent reports disagree and neither side has ${K()} independent confirmations.`);
   }
 
-  // 4. Estimate from history (only when there is no live evidence at all).
-  const est = estimateFrom(pattern, cfg);
+  // 4. Estimate from history — only when there are no fresh reports at all, so history never overrides what neighbours say now.
+  const est = community.recentReports === 0 ? estimateFrom(pattern, cfg) : null;
   const pending = communityItem("supporting");
   if (pending) evidence.push(pending);
   if (est) {
@@ -235,7 +273,7 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
   // 5. Unknown, with the reason.
   const why =
     community.recentReports > 0
-      ? `Not enough verified data: ${community.leaning ? `${community.leaning === "on" ? community.onReporters : community.offReporters} of 3 needed people say ${word(community.leaning)}` : "recent reports don't agree yet"}.`
+      ? `Not enough verified data: ${community.leaning ? `${community.leaning === "on" ? community.onReporters : community.offReporters} of ${K()} needed people say ${word(community.leaning)}` : "recent reports don't agree yet"}.`
       : community.freshness === "stale"
         ? "Not enough verified data: the last reports are over an hour old, so they no longer count as live."
         : "Not enough verified data: no recent reports and no official outage data for this area.";

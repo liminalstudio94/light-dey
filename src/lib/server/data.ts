@@ -10,12 +10,29 @@ export const MAP_STATES: MapState[] = ["CONFIRMED_ON", "COMMUNITY_ON", "CONFIRME
 
 export type { Overview } from "../types";
 
+/**
+ * If this version is deployed before its evidence migration (missing table/column),
+ * keep serving community-only statuses instead of failing every page. Other errors still throw.
+ */
+export async function evidenceOrEmpty<T>(p: Promise<T[]>, what: string): Promise<T[]> {
+  try {
+    return await p;
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code === "42P01" || code === "42703") {
+      console.error(`[overview] ${what} unavailable (${code}); run \`npm run db:migrate\`. Serving community-only status.`);
+      return [];
+    }
+    throw e;
+  }
+}
+
 export async function getOverview(now = new Date()): Promise<Overview> {
   const store = getStore();
   const [reports, observations, patterns] = await Promise.all([
     store.listReports({ since: new Date(now.getTime() - 24 * 3_600_000) }),
-    store.listObservations(now),
-    store.listHourPatterns(lagosHour(now.getTime())),
+    evidenceOrEmpty(store.listObservations(now), "observations"),
+    evidenceOrEmpty(store.listHourPatterns(lagosHour(now.getTime())), "hourly_patterns"),
   ]);
   const patternByArea = new Map(patterns.map((p) => [p.areaId, p]));
   // Community-only status first (all 24h reports so staleness can be explained), then combine with other evidence.
