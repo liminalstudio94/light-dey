@@ -18,15 +18,20 @@ const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}[^>]*>(
 
 export function parseRss(xml: string): FeedItem[] {
   if (!/<rss[\s>]/i.test(xml)) throw new Error("Ikeja Electric: response is not RSS");
-  // Structural checks so a truncated response fails instead of looking like "0 items".
-  const body = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
-  if (!/<\/rss>\s*$/i.test(body.trim())) throw new Error("Ikeja Electric: RSS is truncated (no closing </rss>)");
-  if (!/<channel[\s>][\s\S]*<\/channel>/i.test(body)) throw new Error("Ikeja Electric: RSS has no complete <channel>");
-  const opens = (body.match(/<item[\s>]/gi) ?? []).length;
-  const closes = (body.match(/<\/item>/gi) ?? []).length;
+  // Mask CDATA so markup-like text inside it can't affect structure, then use ONE item pattern
+  // (whitespace/attributes allowed) for counting and extraction; any mismatch fails the run.
+  const cdata: string[] = [];
+  const masked = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, (m) => `\u0000${cdata.push(m) - 1}\u0000`);
+  const unmask = (s: string) => s.replace(/\u0000(\d+)\u0000/g, (_, i) => cdata[Number(i)]);
+  if (!/<\/rss>\s*$/i.test(masked.trim())) throw new Error("Ikeja Electric: RSS is truncated (no closing </rss>)");
+  if (!/<channel(?:\s[^>]*)?>[\s\S]*<\/channel>/i.test(masked)) throw new Error("Ikeja Electric: RSS has no complete <channel>");
+  const opens = (masked.match(/<item(?:\s[^>]*)?>/gi) ?? []).length;
+  const closes = (masked.match(/<\/item\s*>/gi) ?? []).length;
   if (opens !== closes) throw new Error(`Ikeja Electric: ${opens} <item> openings but ${closes} closings`);
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((m) => {
-    const it = m[1];
+  const found = [...masked.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item\s*>/gi)];
+  if (found.length !== opens) throw new Error(`Ikeja Electric: found ${found.length} of ${opens} items`);
+  return found.map((m) => {
+    const it = unmask(m[1]);
     const link = decodeEntities(tag(it, "link")).trim();
     const published = new Date(decodeEntities(tag(it, "pubDate")).trim());
     if (!link || Number.isNaN(published.getTime())) throw new Error("Ikeja Electric: item missing link or date");

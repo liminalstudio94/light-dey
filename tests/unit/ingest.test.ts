@@ -319,6 +319,40 @@ describe("Qodo re-review on PR #3", () => {
   });
 });
 
+describe("Qodo pass 3 on PR #3", () => {
+  const feed = (items: string) => `<?xml version="1.0"?><rss version="2.0"><channel><title>IE</title>${items}</channel></rss>`;
+  const item = (open: string, t: string) => `${open}<title>${t}</title><link>https://www.ikejaelectric.com/${t}</link><pubDate>Fri, 13 Nov 2026 10:00:00 +0000</pubDate><description><![CDATA[Works in Shomolu]]></description></item>`;
+
+  it("extracts items whose tag has attributes or whitespace instead of dropping them (#1)", () => {
+    const items = parseRss(feed(item('<item rdf:about="x">', "a") + item("<item >", "b") + item("<item>", "c")));
+    expect(items.map((i) => i.title)).toEqual(["a", "b", "c"]);
+    expect(items[0].text).toBe("Works in Shomolu");
+  });
+  it("markup-like text inside CDATA can't break or fake the structure (#1)", () => {
+    const tricky = `<item><title>t</title><link>https://www.ikejaelectric.com/t</link><pubDate>Fri, 13 Nov 2026 10:00:00 +0000</pubDate><description><![CDATA[see <item> and </item> here]]></description></item>`;
+    const items = parseRss(feed(tricky));
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toBe("see and here");
+  });
+
+  it("writes the audit row in the same write as the observation, only when it changes (#2)", async () => {
+    const store = new MemoryStore();
+    const row = { sourceId: "verified:ada", externalId: "e1", scope: "neighbourhood" as const, scopeRef: "yaba", kind: "status_report" as const, status: "off" as const, valueNum: null, title: null, url: null, observedAt: new Date().toISOString(), validUntil: new Date(Date.now() + 3_600_000).toISOString(), neighbourhoodIds: [] };
+    const audit = { audit: { event: "partner_ingested" as const, actor: "key:k1" } };
+    expect(await store.upsertObservations([row], audit)).toBe(1);
+    expect(await store.upsertObservations([row], audit)).toBe(0);
+    expect(store.events).toEqual([{ event: "partner_ingested", actor: "key:k1" }]);
+  });
+
+  it("the quota log keeps only the last hour (#3)", async () => {
+    const store = new MemoryStore();
+    const t0 = new Date("2026-11-14T10:00:00Z");
+    for (let i = 0; i < 5; i++) await store.consumePartnerQuota("k", 120, t0);
+    await store.consumePartnerQuota("k", 120, new Date(t0.getTime() + 2 * 3_600_000));
+    expect((store as unknown as { quota: Map<string, number[]> }).quota.get("k")).toHaveLength(1);
+  });
+});
+
 describe("cron endpoint", () => {
   it("requires CRON_SECRET", async () => {
     process.env.CRON_SECRET = "s3cret-value-for-tests";

@@ -68,8 +68,10 @@ export function lagosHour(now: number): number {
   return new Date(now + LAGOS_UTC_OFFSET_MINUTES * MIN).getUTCHours();
 }
 
-export function estimateFrom(pattern: HourPattern | null | undefined, cfg: Cfg = EVIDENCE_CONFIG): Estimate | null {
+export function estimateFrom(pattern: HourPattern | null | undefined, cfg: Cfg = EVIDENCE_CONFIG, now: number = Date.now()): Estimate | null {
   if (!pattern || pattern.knownHours < cfg.estimate.minSamples) return null;
+  // A pattern only counts while its refresh job keeps it current; old history must not keep predicting.
+  if (!pattern.computedAt || now - Date.parse(pattern.computedAt) > cfg.estimate.patternMaxAgeHours * 3_600_000) return null;
   const p = pattern.lightHours / pattern.knownHours;
   if (p >= cfg.estimate.minProbability) return { status: "on", probability: p, samples: pattern.knownHours, hour: pattern.hour };
   if (1 - p >= cfg.estimate.minProbability) return { status: "off", probability: 1 - p, samples: pattern.knownHours, hour: pattern.hour };
@@ -172,6 +174,11 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     };
   };
   const communityConfirmed: PowerStatus | null = community.state === "LIGHT" ? "on" : community.state === "NO_LIGHT" ? "off" : null;
+  /** Role of the neighbours' reports relative to a decided status: they only "support" what they actually said. */
+  const communityRoleFor = (s: PowerStatus): EvidenceItem["role"] => {
+    const said = communityConfirmed ?? community.leaning;
+    return said === null ? "context" : said === s ? "supporting" : "conflicting";
+  };
 
   const finish = (mapState: MapState, confidence: Confidence, explanation: string, estimate: Estimate | null = null): AreaStatus => ({
     ...community,
@@ -191,13 +198,13 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     const ons = official.filter((o) => o.status === "on");
     if (offs.length && ons.length) {
       official.forEach((o) => evidence.push(item(o, "conflicting")));
-      const c = communityItem("supporting");
+      const c = communityItem("context");
       if (c) evidence.push(c);
       return finish("CONFLICTING", "low", "Official sources disagree right now.");
     }
     const s = official[0].status as PowerStatus;
     official.forEach((o, i) => evidence.push(item(o, i === 0 ? "decisive" : "supporting")));
-    const c = communityItem(communityConfirmed && communityConfirmed !== s ? "conflicting" : "supporting");
+    const c = communityItem(communityRoleFor(s));
     if (c) evidence.push(c);
     const contradicted = communityConfirmed !== null && communityConfirmed !== s;
     const oldReading = ageMin(official[0].observedAt, now) > cfg.officialHighConfidenceMaxMinutes;
@@ -219,7 +226,7 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
     const agreeWith = (s: PowerStatus) => (s === "on" ? vOn : vOff);
     if (vOn.length && vOff.length) {
       verified.forEach((o) => evidence.push(item(o, "conflicting", `Verified reporter: ${word(o.status!)}`)));
-      const c = communityItem("supporting");
+      const c = communityItem("context");
       if (c) evidence.push(c);
       return finish("CONFLICTING", "low", "Verified reporters disagree.");
     }
@@ -231,7 +238,7 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
       return finish("CONFLICTING", "low", "Verified reporters and neighbours disagree.");
     }
     agree.forEach((o) => evidence.push(item(o, agree.length >= cfg.verifiedConfirmCount || communityConfirmed === s ? "decisive" : "supporting", `Verified reporter: ${word(s)}`)));
-    const c = communityItem("supporting");
+    const c = communityItem(communityRoleFor(s));
     if (c) evidence.push(c);
     if (agree.length >= cfg.verifiedConfirmCount || communityConfirmed === s) {
       return finish(s === "on" ? "CONFIRMED_ON" : "CONFIRMED_OFF", agree.length >= cfg.verifiedConfirmCount && communityConfirmed === s ? "high" : "medium", `Confirmed by ${agree.length} verified reporter${agree.length > 1 ? "s" : ""}${communityConfirmed === s ? " and neighbours" : ""}.`);
@@ -252,7 +259,7 @@ export function resolveAreaStatus({ community, observations, pattern, now: nowDa
   }
 
   // 4. Estimate from history — only when there are no fresh reports at all, so history never overrides what neighbours say now.
-  const est = community.recentReports === 0 ? estimateFrom(pattern, cfg) : null;
+  const est = community.recentReports === 0 ? estimateFrom(pattern, cfg, now) : null;
   const pending = communityItem("supporting");
   if (pending) evidence.push(pending);
   if (est) {

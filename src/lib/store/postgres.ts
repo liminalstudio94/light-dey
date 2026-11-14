@@ -118,7 +118,7 @@ export class PostgresStore implements DataStore {
     }));
   }
 
-  async upsertObservations(rows: NewObservation[]): Promise<number> {
+  async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}): Promise<number> {
     let written = 0;
     for (const r of rows) {
       await this.sql.begin(async (tx) => {
@@ -148,7 +148,10 @@ export class PostgresStore implements DataStore {
           await tx`delete from lightdey.observation_neighbourhoods where observation_id = ${id}`;
           if (wanted.length) await tx`insert into lightdey.observation_neighbourhoods ${tx(wanted.map((n) => ({ observation_id: id, neighbourhood_id: n })))}`;
         }
-        if (changed.length || linksChanged) written++;
+        if (changed.length || linksChanged) {
+          written++;
+          if (opts.audit) await tx`insert into lightdey.verification_events (observation_id, event, actor) values (${id}, ${opts.audit.event}, ${opts.audit.actor})`;
+        }
       });
     }
     return written;
@@ -177,9 +180,9 @@ export class PostgresStore implements DataStore {
   }
 
   async listHourPatterns(hour: number): Promise<HourPattern[]> {
-    const rows = await this.sql<{ neighbourhood_id: string; hour: number; light_hours: number; known_hours: number }[]>`
-      select neighbourhood_id, hour, light_hours, known_hours from lightdey.hourly_patterns where hour = ${hour}`;
-    return rows.map((r) => ({ areaId: r.neighbourhood_id, hour: r.hour, lightHours: r.light_hours, knownHours: r.known_hours }));
+    const rows = await this.sql<{ neighbourhood_id: string; hour: number; light_hours: number; known_hours: number; computed_at: Date }[]>`
+      select neighbourhood_id, hour, light_hours, known_hours, computed_at from lightdey.hourly_patterns where hour = ${hour}`;
+    return rows.map((r) => ({ areaId: r.neighbourhood_id, hour: r.hour, lightHours: r.light_hours, knownHours: r.known_hours, computedAt: r.computed_at.toISOString() }));
   }
 
   async replaceHourPatterns(rows: HourPattern[], windowDays: number): Promise<void> {
@@ -225,6 +228,8 @@ export class PostgresStore implements DataStore {
     return this.sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext(${"lightdey:partner:" + keyId}))`;
       const [{ n }] = await tx<{ n: number }[]>`select count(*)::int as n from lightdey.partner_key_writes where key_id = ${keyId} and written_at > ${now}::timestamptz - interval '1 hour'`;
+      // Only the last hour matters: prune this key's older rows so the log stays bounded.
+      await tx`delete from lightdey.partner_key_writes where key_id = ${keyId} and written_at <= ${now}::timestamptz - interval '1 hour'`;
       if (n >= limit) return false;
       await tx`insert into lightdey.partner_key_writes (key_id, written_at) values (${keyId}, ${now})`;
       return true;

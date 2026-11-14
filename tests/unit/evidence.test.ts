@@ -32,9 +32,9 @@ const disco = (id: "eko" | "ikeja", mw: number, minAgo = 5) =>
 const verified = (sourceId: string, areaId: string, status: PowerStatus, minAgo = 5) =>
   obs({ sourceId, kind: "status_report", scope: "neighbourhood", scopeRef: areaId, status, tier: 2, observedAt: iso(minAgo) });
 
-function resolve(areaId: string, reports: Report[], observations: Observation[] = [], pattern: { light: number; known: number } | null = null) {
+function resolve(areaId: string, reports: Report[], observations: Observation[] = [], pattern: { light: number; known: number; computedAt?: string } | null = null) {
   const community = aggregateAreaStatus(areaId, reports, NOW);
-  return resolveAreaStatus({ community, observations, pattern: pattern && { areaId, hour: 13, lightHours: pattern.light, knownHours: pattern.known }, now: NOW });
+  return resolveAreaStatus({ community, observations, pattern: pattern && { areaId, hour: 13, lightHours: pattern.light, knownHours: pattern.known, computedAt: pattern.computedAt ?? NOW.toISOString() }, now: NOW });
 }
 const yaba = (status: PowerStatus, minAgo: number, who: string, net?: string) => rep(status, minAgo, who, { areaId: "yaba", net });
 
@@ -150,6 +150,17 @@ describe("official sources", () => {
     expect(s.explanation).toMatch(/generator\/solar/);
   });
 
+  it("neighbours who said the opposite are never listed as supporting (Qodo pass 3, #2-3)", () => {
+    const two = [rep("on", 1, "a", { areaId: "ajah" }), rep("on", 2, "b", { areaId: "ajah" })];
+    const s = resolve("ajah", two, [disco("eko", 0)]);
+    expect(s.mapState).toBe("CONFIRMED_OFF");
+    expect(s.evidence?.find((e) => e.sourceId === "community")?.role).toBe("conflicting");
+    const agreeing = resolve("ajah", [rep("off", 1, "a", { areaId: "ajah" })], [disco("eko", 0)]);
+    expect(agreeing.evidence?.find((e) => e.sourceId === "community")?.role).toBe("supporting");
+    const mixed = resolve("ajah", [rep("on", 1, "a", { areaId: "ajah" }), rep("off", 2, "b", { areaId: "ajah" })], [disco("eko", 0)]);
+    expect(mixed.evidence?.find((e) => e.sourceId === "community")?.role).toBe("context");
+  });
+
   it("opposing official evidence => CONFLICTING", () => {
     const partnerOn = obs({ sourceId: "partner:estate", kind: "status_report", scope: "neighbourhood", scopeRef: "ikeja", status: "on", tier: 1 });
     expect(resolve("ikeja", [], [disco("ikeja", 0), partnerOn]).mapState).toBe("CONFLICTING");
@@ -217,14 +228,19 @@ describe("estimates", () => {
     expect(s.explanation).toMatch(/not live/);
   });
   it("thin or mixed history => no estimate", () => {
-    expect(estimateFrom({ areaId: "x", hour: 1, lightHours: 5, knownHours: 5 })).toBeNull(); // < 6 samples
-    expect(estimateFrom({ areaId: "x", hour: 1, lightHours: 6, knownHours: 10 })).toBeNull(); // 60%
+    const fresh = new Date().toISOString();
+    expect(estimateFrom({ areaId: "x", hour: 1, lightHours: 5, knownHours: 5, computedAt: fresh })).toBeNull(); // < 6 samples
+    expect(estimateFrom({ areaId: "x", hour: 1, lightHours: 6, knownHours: 10, computedAt: fresh })).toBeNull(); // 60%
   });
   it("fresh reports, even below the threshold, suppress the estimate (Qodo #2-9)", () => {
     const s = resolve("agege", [rep("off", 2, "a", { areaId: "agege" }), rep("off", 4, "b", { areaId: "agege" })], [], { light: 10, known: 10 });
     expect(s.mapState).toBe("UNKNOWN");
     expect(s.explanation).toMatch(/2 of 3 needed people say no light/);
     expect(s.evidence?.some((e) => e.role === "estimate")).toBe(false);
+  });
+  it("a pattern whose refresh stopped no longer predicts (Qodo pass 3, #2-2)", () => {
+    expect(resolve("agege", [], [], { light: 9, known: 10, computedAt: iso(5 * 60) }).mapState).toBe("UNKNOWN");
+    expect(resolve("agege", [], [], { light: 9, known: 10, computedAt: iso(30) }).mapState).toBe("ESTIMATED_ON");
   });
   it("live community evidence always beats an estimate", () => {
     const s = resolve("agege", ["a", "b", "c"].map((w, i) => rep("off", i + 1, w, { areaId: "agege" })), [], { light: 10, known: 10 });
