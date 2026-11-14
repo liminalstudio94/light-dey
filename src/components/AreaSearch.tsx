@@ -3,12 +3,13 @@ import { useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { searchAreas } from "@/lib/areas";
-import { STATE_META } from "@/lib/format";
-import type { AreaState } from "@/lib/types";
+import { MAP_STATE_META, STATE_META } from "@/lib/format";
+import type { AreaState, MapState } from "@/lib/types";
 import { StatusDot } from "./StatusBadge";
 
 /** Accessible combobox: type, arrow keys, Enter to open the area's live status. */
-export function AreaSearch({ states = {}, size = "lg", autoFocus = false }: { states?: Record<string, AreaState>; size?: "lg" | "md"; autoFocus?: boolean }) {
+/** `mapStates` (evidence-based) are preferred; `states` (legacy) is the fallback. */
+export function AreaSearch({ states = {}, mapStates = {}, size = "lg", autoFocus = false }: { states?: Record<string, AreaState>; mapStates?: Record<string, MapState>; size?: "lg" | "md"; autoFocus?: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -66,6 +67,7 @@ export function AreaSearch({ states = {}, size = "lg", autoFocus = false }: { st
           {results.length === 0 && <li className="px-5 py-3 text-sm text-ink-3">No supported area matches “{q}” yet.</li>}
           {results.map((a, i) => {
             const st = states[a.id] ?? "UNKNOWN";
+            const ms = mapStates[a.id];
             return (
               <li
                 key={a.id}
@@ -83,8 +85,8 @@ export function AreaSearch({ states = {}, size = "lg", autoFocus = false }: { st
                   <span className="font-medium text-ink">{a.name}</span>
                   <span className="ml-2 text-xs text-ink-3">{a.lga}</span>
                 </span>
-                <span className={`flex items-center gap-1.5 text-xs font-medium ${STATE_META[st].text}`}>
-                  <StatusDot state={st} /> {STATE_META[st].short}
+                <span className={`flex items-center gap-1.5 text-xs font-medium ${STATE_META[ms ? MAP_STATE_META[ms].group : st].text}`}>
+                  <StatusDot state={ms ? MAP_STATE_META[ms].group : st} mapState={ms} /> {ms ? MAP_STATE_META[ms].short : STATE_META[st].short}
                 </span>
               </li>
             );

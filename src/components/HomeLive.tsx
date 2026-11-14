@@ -14,7 +14,8 @@ import { useOverview } from "./useOverview";
 export function HeroSearch({ initial }: { initial: Overview }) {
   const data = useOverview(initial);
   const states = Object.fromEntries(data.statuses.map((s) => [s.areaId, s.state]));
-  return <AreaSearch states={states} autoFocus={false} />;
+  const mapStates = Object.fromEntries(data.statuses.filter((s) => s.mapState).map((s) => [s.areaId, s.mapState!]));
+  return <AreaSearch states={states} mapStates={mapStates} autoFocus={false} />;
 }
 
 /** Every live section of the home page shares one polled overview. */

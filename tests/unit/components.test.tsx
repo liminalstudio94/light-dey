@@ -58,8 +58,8 @@ describe("shareText", () => {
     const s = aggregateAreaStatus("ajah", ["a", "b", "c"].map((w, i) => rep("on", i + 1, w, { areaId: "ajah" })), NOW);
     const official = { ...s, state: "NO_LIGHT" as const, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
     const t = shareText("Ajah", official, NOW.getTime());
-    expect(t).toMatch(/confirmed by NISO grid data/);
-    expect(t).not.toMatch(/3 people/);
+    expect(t).toMatch(/NISO grid data/);
+    expect(t).not.toMatch(/3 people|3 neighbours/);
   });
   it("never claims light for an unknown area", () => {
     const t = shareText("Yaba", aggregateAreaStatus("yaba", [], NOW), NOW.getTime());
@@ -77,7 +77,8 @@ describe("evidence-aware UI", () => {
   it("share text never upgrades a reported status to confirmed, or an estimate to live", () => {
     const base = aggregateAreaStatus("yaba", [rep("off", 1, "a"), rep("off", 2, "b"), rep("off", 3, "c")], NOW);
     expect(shareText("Yaba", { ...base, mapState: "COMMUNITY_OFF" }, NOW.getTime())).toMatch(/^NO LIGHT reported in Yaba: 3 neighbours reported an outage .*\(not official\)/);
-    expect(shareText("Yaba", { ...base, mapState: "ESTIMATED_OFF" }, NOW.getTime())).toMatch(/^No live light reports/);
+    // Estimates only exist when there are no fresh reports (engine rule), so use an area with none.
+    expect(shareText("Yaba", { ...aggregateAreaStatus("yaba", [], NOW), mapState: "ESTIMATED_OFF" }, NOW.getTime())).toMatch(/^No live light reports/);
     const official = { ...base, mapState: "CONFIRMED_OFF" as const, evidence: [{ sourceId: "niso_niggrid", sourceName: "NISO grid data", tier: 1 as const, role: "decisive" as const, status: "off" as const, summary: "", count: 1, observedAt: NOW.toISOString(), freshness: "fresh" as const, url: null }] };
     expect(shareText("Yaba", official, NOW.getTime())).toMatch(/^GRID SUPPLY OUTAGE affecting Yaba — official NISO grid data at/);
     expect(shareText("Yaba", official, NOW.getTime())).toMatch(/generator, solar or a private supply/); // Qodo #4-10
@@ -122,5 +123,25 @@ describe("Qodo re-review on PR #4", () => {
     expect(latestEvidenceAt(s)).toBeNull();
     // A valid report that has merely aged out still counts as history.
     expect(aggregateAreaStatus("yaba", [rep("off", 90, "a")], NOW).lastReportAt).not.toBeNull();
+  });
+});
+
+describe("Qodo pass 3 on PR #4", () => {
+  it("Unknown shares never deny reports that exist (#1)", () => {
+    const one = aggregateAreaStatus("yaba", [rep("off", 2, "a")], NOW);
+    expect(shareText("Yaba", { ...one, mapState: "UNKNOWN" }, NOW.getTime())).toMatch(/some recent reports, but not enough to confirm yet/);
+    const verifiedOnly = { ...aggregateAreaStatus("yaba", [], NOW), mapState: "UNKNOWN" as const, evidence: [ev({ sourceId: "verified_reporters", sourceName: "Verified reporter", tier: 2, role: "supporting", status: "off" })] };
+    expect(shareText("Yaba", verifiedOnly, NOW.getTime())).toMatch(/not enough to confirm yet/);
+    expect(shareText("Yaba", { ...aggregateAreaStatus("yaba", [], NOW), mapState: "UNKNOWN" }, NOW.getTime())).toMatch(/^No live light reports/);
+  });
+  it("map search shows evidence-based states, e.g. estimates aren't called Unknown (#2)", async () => {
+    const { AreaSearch } = await import("@/components/AreaSearch");
+    render(<AreaSearch states={{ agege: "UNKNOWN", ajah: "NO_LIGHT" }} mapStates={{ agege: "ESTIMATED_ON", ajah: "CONFIRMED_OFF" }} />);
+    const input = screen.getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "ag" } });
+    expect(screen.getByRole("option", { name: /Agege/ })).toHaveTextContent("Est. on");
+    fireEvent.change(input, { target: { value: "aja" } });
+    expect(screen.getByRole("option", { name: /Ajah/ })).toHaveTextContent("Confirmed off");
   });
 });

@@ -3,7 +3,7 @@ import { Clock, Info, MapPin, ShieldCheck, Users } from "lucide-react";
 import { distanceKm, getArea, AREAS } from "@/lib/areas";
 import { STATUS_CONFIG } from "@/lib/config";
 import { CONFIDENCE_LABEL, FRESHNESS_LABEL, MAP_STATE_META, STATE_META, hourLabel, lagosTime, timeAgo } from "@/lib/format";
-import { latestEvidenceAt } from "@/lib/share";
+import { hasRecentReports, latestEvidenceAt } from "@/lib/share";
 import { freshnessOf } from "@/lib/status";
 import type { Overview } from "@/lib/types";
 import { AreaStatusCard } from "./AreaStatusCard";
@@ -28,15 +28,18 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
     .slice(0, 3)
     .map(({ a }) => data.statuses.find((x) => x.areaId === a.id)!);
   const k = STATUS_CONFIG.confirmationThreshold;
+  const verifiedSays = s.evidence?.find((e) => e.tier === 2 && e.role !== "context" && e.status)?.status ?? null;
   const ask =
     mapState === "CONFLICTING"
       ? `Sources disagree right now. Are you in ${area.name}? Tell us what you see.`
       : mapState === "UNKNOWN" || hollow
-        ? s.recentReports === 0
+        ? !hasRecentReports(s)
           ? `No one has reported recently. Are you in ${area.name} now? One tap helps.`
           : s.leaning
             ? `${s.leaning === "on" ? s.onReporters : s.offReporters} of ${k} needed neighbours say ${s.leaning === "on" ? "light dey" : "no light"}. Can you confirm?`
-            : `Recent reports don't agree yet. Are you in ${area.name}? Tell us what you see.`
+            : verifiedSays
+              ? `A verified reporter says ${verifiedSays === "on" ? "light dey" : "no light"}. Can you confirm?`
+              : `Recent reports don't agree yet. Are you in ${area.name}? Tell us what you see.`
         : null;
   // Agreement is measured against the status shown, not whatever side the community leaned.
   const shownSide = meta.group === "LIGHT" ? "on" : meta.group === "NO_LIGHT" ? "off" : null;

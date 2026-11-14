@@ -7,6 +7,11 @@ export function latestEvidenceAt(s: AreaStatus): string | null {
   return times.length ? times.reduce((a, b) => (Date.parse(a) > Date.parse(b) ? a : b)) : null;
 }
 
+/** Fresh reports exist (community or verified) even if they don't establish a status yet. */
+export function hasRecentReports(s: AreaStatus): boolean {
+  return s.recentReports > 0 || (s.evidence ?? []).some((e) => e.role !== "context" && e.role !== "estimate");
+}
+
 /**
  * Share copy always carries time, confidence and source level, and never says more than the
  * evidence: community => "reported", grid data => "grid supply", estimates/unknown => no claim.
@@ -32,6 +37,9 @@ export function shareText(areaName: string, s: AreaStatus, now = Date.now()): st
     case "CONFLICTING":
       return `Light status in ${areaName} is mixed — reports disagree right now.${when} Help confirm on Light Dey?:`;
     default:
-      return `No live light reports for ${areaName}. Is there light where you are? Report it on Light Dey?:`;
+      // Unknown or estimate: never deny reports that exist; say they're not enough yet.
+      return hasRecentReports(s)
+        ? `Light status in ${areaName}: some recent reports, but not enough to confirm yet. Is there light where you are? Help confirm on Light Dey?:`
+        : `No live light reports for ${areaName}. Is there light where you are? Report it on Light Dey?:`;
   }
 }
