@@ -84,13 +84,15 @@ export class PostgresStore implements DataStore {
     const rows = await this.sql<
       { id: string; source_id: string; external_id: string; scope: Observation["scope"]; scope_ref: string | null; kind: Observation["kind"]; status: Observation["status"]; value_num: number | null; title: string | null; url: string | null; observed_at: Date; valid_until: Date; tier: number; source_kind: string; areas: string[] | null }[]
     >`
-      with candidates as (
+      -- Newest reading per measure FIRST, then drop it if expired: an expired newer reading must
+      -- never let an older, longer-lived one "revive". (2-day bound: nothing older can be valid.)
+      with newest as (
         select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
         from lightdey.observations
-        where valid_until >= ${now} and kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes'
+        where kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
         order by source_id, kind, scope, coalesce(scope_ref, ''), observed_at desc
       ), picked as (
-        select * from candidates
+        select * from newest where valid_until >= ${now}
         union all
         select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
       )
@@ -122,8 +124,9 @@ export class PostgresStore implements DataStore {
 
   async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}): Promise<number> {
     let written = 0;
-    for (const r of rows) {
-      await this.sql.begin(async (tx) => {
+    // The whole batch is ONE transaction: if any row fails, nothing from this run becomes evidence.
+    await this.sql.begin(async (tx) => {
+      for (const r of rows) {
         // Every mutable column takes part in change detection, so corrections are never discarded.
         const changed = await tx<{ id: string }[]>`
           insert into lightdey.observations as o_old (source_id, external_id, scope, scope_ref, kind, status, value_num, title, url, observed_at, valid_until, payload)
@@ -154,8 +157,8 @@ export class PostgresStore implements DataStore {
           written++;
           if (opts.audit) await tx`insert into lightdey.verification_events (observation_id, event, actor) values (${id}, ${opts.audit.event}, ${opts.audit.actor})`;
         }
-      });
-    }
+      }
+    });
     return written;
   }
 

@@ -98,13 +98,22 @@ export async function runAdapter(store: DataStore, a: Adapter, opts: { now?: Dat
   return { sourceId: a.sourceId, ...result };
 }
 
+/** Must match the LIMIT in PostgresStore.listReports. */
+export const REPORT_QUERY_CAP = 50_000;
+
 /** Hour-of-day patterns from confirmed community history (for labelled estimates). */
 export async function recomputePatterns(store: DataStore, now: Date = new Date()): Promise<number> {
   const days = EVIDENCE_CONFIG.estimate.windowDays;
-  const reports = await store.listReports({ since: new Date(now.getTime() - (days * 24 + 2) * 3_600_000) });
+  const since = new Date(now.getTime() - (days * 24 + 2) * 3_600_000);
   const rows: HourPattern[] = [];
   for (const area of AREAS) {
-    const mine = reports.filter((r) => r.areaId === area.id);
+    // Per area keeps each read far below the store's row cap; a capped (incomplete) history is skipped,
+    // never turned into a pattern — no estimate beats a wrong one.
+    const mine = await store.listReports({ since, areaId: area.id });
+    if (mine.length >= REPORT_QUERY_CAP) {
+      console.error(`[patterns] ${area.id}: history hit the ${REPORT_QUERY_CAP}-row cap; skipped`);
+      continue;
+    }
     if (!mine.length) continue;
     for (const h of historyStats(area.id, mine, days, now).byHour) {
       if (h.samples > 0) rows.push({ areaId: area.id, hour: h.hour, knownHours: h.samples, lightHours: Math.round(((h.lightPct ?? 0) * h.samples) / 100) });

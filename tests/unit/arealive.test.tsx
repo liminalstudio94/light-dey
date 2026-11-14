@@ -59,3 +59,15 @@ describe("AreaLive (Qodo PR #4)", () => {
     expect(screen.queryByText(/No one has reported/)).toBeNull();
   });
 });
+
+describe("Qodo pass 4 on PR #4", () => {
+  it("a 70-minute-old official outage reads 'Ageing' in the header, matching its evidence item (#1)", () => {
+    const old = { ...eko0, observedAt: new Date(NOW.getTime() - 70 * 60_000).toISOString() };
+    const s = resolveAreaStatus({ community: aggregateAreaStatus("ajah", [], NOW), observations: [old], now: NOW });
+    expect(s.mapState).toBe("CONFIRMED_OFF");
+    render(<AreaLive areaId="ajah" initial={overview([s])} />);
+    const conf = screen.getByText("Confidence").nextElementSibling;
+    expect(conf).toHaveTextContent("Ageing");
+    expect(conf).not.toHaveTextContent("Stale");
+  });
+});
