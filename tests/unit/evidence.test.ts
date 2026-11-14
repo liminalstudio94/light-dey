@@ -320,3 +320,12 @@ describe("gridContextFrom", () => {
     expect(gridContextFrom([disco("eko", 482, 120)], NOW)).toBeNull();
   });
 });
+
+describe("Qodo pass 5 on PR #2", () => {
+  it("a grid reading without a MW value is never shown as 0 MW (#2)", () => {
+    const blank = obs({ kind: "disco_allocation", scope: "disco", scopeRef: "ikeja", valueNum: null, status: null });
+    expect(gridContextFrom([blank], NOW)?.discos ?? []).toEqual([]);
+    expect(resolve("ikeja", [], [blank]).evidence).toEqual([]);
+    expect(gridContextFrom([obs({ kind: "grid_total", scope: "national", valueNum: null })], NOW)?.totalMw ?? null).toBeNull();
+  });
+});

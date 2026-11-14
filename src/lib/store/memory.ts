@@ -37,7 +37,6 @@ export class MemoryStore implements DataStore {
     return this.reports.filter((r) => r.networkHash === networkHash && Date.parse(r.createdAt) >= s).length;
   }
 
-  /** Mirrors PostgresStore: only unexpired rows from active sources (registry or approved partner). */
   /** Mirrors PostgresStore: newest reading per measure first, THEN drop it if expired; only active sources. */
   async listObservations(now: Date) {
     const t = now.getTime();

@@ -45,7 +45,7 @@ export function HomeLive({ initial }: { initial: Overview }) {
             </p>
             <h2 id="overview-h" className="mt-1 font-display text-3xl font-bold tracking-tight">Lagos right now</h2>
           </div>
-          <p className="text-sm text-ink-2">{confirmed} of {data.statuses.length} areas have live evidence right now</p>
+          <p className="text-sm text-ink-2">{confirmed} of {data.statuses.length} areas have current evidence (each status shows its own age)</p>
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {tiles.map((t) => (
