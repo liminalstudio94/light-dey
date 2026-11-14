@@ -10,6 +10,7 @@ import { EvidenceList } from "./EvidenceList";
 import { LagosMap } from "./LagosMap";
 import { ShareButtons } from "./ShareButtons";
 import { StatusBadge } from "./StatusBadge";
+import { Timeline } from "./Timeline";
 import { useOverview } from "./useOverview";
 
 export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; initial: Overview; mobileReport?: React.ReactNode }) {
@@ -28,26 +29,32 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
     .map(({ a }) => data.statuses.find((x) => x.areaId === a.id)!);
   const k = STATUS_CONFIG.confirmationThreshold;
   const verifiedSays = s.evidence?.find((e) => e.tier === 2 && e.role !== "context" && e.status)?.status ?? null;
+  // Freshness comes from the evidence behind the status, on that evidence's own scale
+  // (official readings age over 90 min, reports over 60) — never recomputed on the community scale.
+  const deciding = s.evidence?.find((e) => e.role === "decisive") ?? s.evidence?.find((e) => e.role !== "context" && e.role !== "estimate");
+  const headlineFreshness = deciding?.freshness ?? (s.lastReportAt ? s.freshness : null);
   const ask =
     mapState === "CONFLICTING"
-      ? `Sources disagree right now. Are you in ${area.name}? Tell us what you see.`
-      : mapState === "UNKNOWN" || hollow
+      ? `Sources disagree right now. Are you in ${area.name}? Help confirm this area.`
+      : mapState === "LIKELY_ON" || mapState === "LIKELY_OFF"
+        ? deciding?.evidenceType === "measured"
+          ? `${MAP_STATE_META[mapState].label} — from an indirect sensor reading (degraded, or behind a generator switch), not a direct measurement. Are you in ${area.name}? Help confirm this area.`
+          : `${MAP_STATE_META[mapState].label} — reports back each other up, but nothing is measured or official yet. Are you in ${area.name}? Help confirm this area.`
+        : mapState === "COMMUNITY_ON" || mapState === "COMMUNITY_OFF"
+        ? `${MAP_STATE_META[mapState].label} — not measured or official yet. Are you in ${area.name}? Help confirm this area.`
+        : mapState === "UNKNOWN" || hollow
         ? !hasRecentReports(s)
-          ? `No one has reported recently. Are you in ${area.name} now? One tap helps.`
+          ? `Not enough current evidence for ${area.name}. Are you there now? Help confirm this area — one tap.`
           : s.leaning
-            ? `${s.leaning === "on" ? s.onReporters : s.offReporters} of ${k} needed neighbours say ${s.leaning === "on" ? "light dey" : "no light"}. Can you confirm?`
+            ? `${s.leaning === "on" ? s.onReporters : s.offReporters} of ${k} needed neighbours say ${s.leaning === "on" ? "light dey" : "no light"}. Help confirm this area.`
             : verifiedSays
-              ? `A verified reporter says ${verifiedSays === "on" ? "light dey" : "no light"}. Can you confirm?`
-              : `Recent reports don't agree yet. Are you in ${area.name}? Tell us what you see.`
+              ? `A verified reporter says ${verifiedSays === "on" ? "light dey" : "no light"}. Help confirm this area.`
+              : `Recent reports don't agree yet. Are you in ${area.name}? Help confirm this area.`
         : null;
   // Agreement is measured against the status shown, not whatever side the community leaned.
   const shownSide = meta.group === "LIGHT" ? "on" : meta.group === "NO_LIGHT" ? "off" : null;
   const agreeing = shownSide === "on" ? s.onReporters : shownSide === "off" ? s.offReporters : null;
   const latest = latestEvidenceAt(s);
-  // Freshness comes from the evidence behind the status, on that evidence's own scale
-  // (official readings age over 90 min, reports over 60) — never recomputed on the community scale.
-  const deciding = s.evidence?.find((e) => e.role === "decisive") ?? s.evidence?.find((e) => e.role !== "context" && e.role !== "estimate");
-  const headlineFreshness = deciding?.freshness ?? (s.lastReportAt ? s.freshness : null);
 
   return (
     <>
@@ -102,14 +109,23 @@ export function AreaLive({ areaId, initial, mobileReport }: { areaId: string; in
           </div>
         ) : (
           <p className="mt-3 rounded-2xl border border-dashed border-line bg-surface px-4 py-4 text-sm text-ink-2">
-            No live evidence for {area.name} right now: no official outage data covers it, and there are no community reports from the last hour. That&rsquo;s why it shows Unknown.
+            No live evidence for {area.name} right now: no sensor reading, no official outage data covers it, and there are no reports from the last hour. That&rsquo;s why it shows “Not enough current evidence”.
           </p>
         )}
+        <p className="mt-3 text-sm text-ink-2">
+          {s.sensors && s.sensors.total > 0
+            ? `${s.sensors.total} Light Dey sensor${s.sensors.total > 1 ? "s" : ""} here: ${s.sensors.online} online, ${s.sensors.offline} offline (an offline sensor is never read as an outage).`
+            : `No Light Dey sensors in ${area.name} yet.`}{" "}
+          <a href="/sensors" className="font-medium text-brand">How sensors work</a>
+        </p>
         <p className="mt-2 text-xs text-ink-3">
           {s.disco ? `Officially served by ${s.disco === "eko" ? "Eko DisCo" : "Ikeja Electric"}, so DisCo-wide grid outages apply here.` : `${area.name} isn't officially mapped to a DisCo yet, so only national grid collapses and local reports apply.`}{" "}
           <a href="/sources" className="font-medium text-brand">How sources are used</a>
         </p>
       </section>
+
+      {/* Refetches whenever the live status refreshes, so "Recent changes" never lags the headline. */}
+      <Timeline areaId={areaId} refreshKey={`${data.generatedAt}|${mapState}`} now={now} />
 
       <div className="mt-6 rounded-3xl border border-line bg-surface p-5">
         <ShareButtons areaName={area.name} path={`/area/${area.id}`} status={s} />

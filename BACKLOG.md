@@ -42,6 +42,31 @@ REPORTER_HASH_SECRET set; production smoke test of report → status.
 ### LD-043 — Evidence UI: map states, attribution, grid card, /sources, confirm prompt · P0 · done (PR #4)
 ### LD-045 — CI + Qodo config · P0 · done (PR #3)
 
+### LD-070 — Evidence engine v2 + Light Dey Sensor telemetry · P0 · done (PR #5)
+### LD-071 — UI v2: likely/measured labels, sensor coverage, timeline, help-confirm, /sensors · P0 · done (PR #6)
+
+## Next — sensors & partners (implementation order, one PR each)
+### LD-072 — Sensor pilot: 3 hosts in Yaba, Ikeja, Lekki · P0 · needs hardware + hosts
+Provision with `npm run sensor:provision`, electrician-installed opto-isolated mains module on a grid-only socket, Pi on UPS. Acceptance: each area shows "Confirmed" with measured evidence while online; pulling the module's mains shows "Confirmed outage" within 2 min; unplugging the Pi shows "offline" (not outage) after 15 min. Tests: field log in PR.
+
+### LD-073 — MQTT bridge · P2 · depends LD-072
+Broker + forwarder that POSTs signed payloads unchanged to `/api/sensors/heartbeat`. Acceptance: bridge holds no secrets; replay/rate rules still enforced server-side.
+
+### LD-074 — Victron VRM adapter · P1 · needs a consenting installation
+Map VRM AC-input state to a reading only for installs confirmed grid-direct. Acceptance: tested against a real installation before the registry says "live".
+
+### LD-075 — Shelly Cloud adapter · P2 · needs a consenting device with voltage reporting
+Acceptance: device online/offline never used as mains evidence; only measured voltage on a grid-only circuit.
+
+### LD-076 — Sensor health dashboard (staff only) · P1 · depends LD-017
+Online/offline/degraded per device, clock skew, last gasp; alerts when a pilot device goes silent.
+
+### LD-077 — IODA permission · P2
+Email IODA's data contact; on written permission set `SOURCE_IODA_ENABLED=1` and record it in the registry notes.
+
+### LD-078 — First verified partners (security desks, shops) · P1
+Issue `partner:` keys (tier 2) with `--areas`; onboarding guide.
+
 ## Next — evidence (in implementation order, one PR each)
 ### LD-046 — Turn on the 10-minute schedule · P0 · needs repo secrets
 Set GitHub secrets `LIGHTDEY_URL` + `CRON_SECRET` (same as Vercel). Acceptance: `source_runs` shows `niso_niggrid` ok at least every 15 min for 24h. Tests: n/a (ops); verify via SQL.

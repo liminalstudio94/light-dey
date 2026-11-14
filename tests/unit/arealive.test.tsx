@@ -35,13 +35,13 @@ describe("AreaLive (Qodo PR #4)", () => {
   it("conflicting reports get a 'sources disagree' prompt, not 'no one reported' (#6)", () => {
     const community = aggregateAreaStatus("surulere", [rep("on", 1, "a", { areaId: "surulere" }), rep("off", 2, "b", { areaId: "surulere" })], NOW);
     render(<AreaLive areaId="surulere" initial={overview([resolveAreaStatus({ community, observations: [], now: NOW })])} />);
-    expect(screen.getByRole("note")).toHaveTextContent(/Sources disagree right now/);
+    expect(screen.getByRole("note")).toHaveTextContent(/Sources disagree right now.*Help confirm this area/);
     expect(screen.getByRole("note")).not.toHaveTextContent(/No one/);
   });
   it("prompt threshold comes from config, and both breakpoints get a working report link (#11, #12)", () => {
     const community = aggregateAreaStatus("yaba", [rep("off", 1, "a")], NOW);
     render(<AreaLive areaId="yaba" initial={overview([resolveAreaStatus({ community, observations: [], now: NOW })])} />);
-    expect(screen.getByRole("note")).toHaveTextContent("1 of 3 needed neighbours say no light");
+    expect(screen.getByRole("note")).toHaveTextContent("1 of 3 needed neighbours say no light. Help confirm this area.");
     const hrefs = screen.getAllByRole("link", { name: /Report now/ }).map((a) => a.getAttribute("href"));
     expect(hrefs).toEqual(["#report", "#report-desktop"]);
   });
@@ -60,6 +60,29 @@ describe("AreaLive (Qodo PR #4)", () => {
   });
 });
 
+describe("AreaLive — sensors brief", () => {
+  const sensorStatus = () => {
+    const sensor = { deviceId: "ldd_0000000000000099", areaId: "yaba", provider: "light_dey_v1", supplyPoint: "grid_direct" as const, mains: "off" as const, powerSource: "ups" as const, observedAt: new Date(NOW.getTime() - 60_000).toISOString(), health: "good" as const, healthReasons: [], networkHash: "n1" };
+    const offline = { ...sensor, deviceId: "ldd_0000000000000098", networkHash: "n2", health: "offline" as const, observedAt: new Date(NOW.getTime() - 40 * 60_000).toISOString() };
+    return resolveAreaStatus({ community: aggregateAreaStatus("yaba", [], NOW), observations: [], sensors: [sensor, offline], now: NOW });
+  };
+  it("a measured outage shows its 'Measured' evidence and sensor coverage", () => {
+    render(<AreaLive areaId="yaba" initial={overview([sensorStatus()])} />);
+    expect(screen.getAllByText("Confirmed outage").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Measured").length).toBeGreaterThan(0);
+    expect(screen.getByText(/2 Light Dey sensors here: 1 online, 1 offline/)).toBeInTheDocument();
+  });
+  it("Reported/Likely states ask to help confirm; empty areas say 'Not enough current evidence'", () => {
+    const one = resolveAreaStatus({ community: aggregateAreaStatus("yaba", [], NOW), observations: [{ ...eko0, id: "v", sourceId: "verified:x", externalId: "v", scope: "neighbourhood", scopeRef: "yaba", kind: "status_report", status: "off", tier: 2, sourceKind: "verified_reporter" }], now: NOW });
+    const { unmount } = render(<AreaLive areaId="yaba" initial={overview([one])} />);
+    expect(screen.getByRole("note")).toHaveTextContent(/Help confirm this area/);
+    unmount();
+    render(<AreaLive areaId="ikoyi" initial={overview([])} />);
+    expect(screen.getAllByText("Not enough current evidence").length).toBeGreaterThan(0);
+    expect(screen.getByRole("note")).toHaveTextContent(/Help confirm this area/);
+  });
+});
+
 describe("Qodo pass 4 on PR #4", () => {
   it("a 70-minute-old official outage reads 'Ageing' in the header, matching its evidence item (#1)", () => {
     const old = { ...eko0, observedAt: new Date(NOW.getTime() - 70 * 60_000).toISOString() };
@@ -69,5 +92,45 @@ describe("Qodo pass 4 on PR #4", () => {
     const conf = screen.getByText("Confidence").nextElementSibling;
     expect(conf).toHaveTextContent("Ageing");
     expect(conf).not.toHaveTextContent("Stale");
+  });
+});
+
+describe("Qodo pass 4 on PR #6", () => {
+  it("a likely state from a sensor isn't called unmeasured (#1)", () => {
+    const sensor = { deviceId: "ldd_0000000000000097", areaId: "yaba", provider: "light_dey_v1", supplyPoint: "after_changeover" as const, mains: "off" as const, powerSource: "ups" as const, observedAt: new Date(NOW.getTime() - 60_000).toISOString(), health: "good" as const, healthReasons: [], networkHash: "n9" };
+    const s = resolveAreaStatus({ community: aggregateAreaStatus("yaba", [], NOW), observations: [], sensors: [sensor], now: NOW });
+    expect(s.mapState).toBe("LIKELY_OFF");
+    render(<AreaLive areaId="yaba" initial={overview([s])} />);
+    expect(screen.getByRole("note")).toHaveTextContent(/indirect sensor reading/);
+    expect(screen.getByRole("note")).not.toHaveTextContent(/not measured/);
+  });
+});
+
+describe("Timeline (Qodo pass 4 on PR #6, #2 #3)", () => {
+  it("a failed load says so (with retry) instead of 'no changes'", async () => {
+    const { Timeline } = await import("@/components/Timeline");
+    const orig = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response("{}", { status: 500 })) as typeof fetch;
+    try {
+      render(<Timeline areaId="yaba" />);
+      expect(await screen.findByRole("alert")).toHaveTextContent(/Couldn.t load recent changes/);
+      expect(screen.queryByText(/No status changes recorded/)).toBeNull();
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+  it("refetches when the live status refreshes", async () => {
+    const { Timeline } = await import("@/components/Timeline");
+    const orig = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (u: RequestInfo | URL) => (calls.push(String(u)), new Response(JSON.stringify({ entries: [] }), { status: 200 }))) as typeof fetch;
+    try {
+      const { rerender } = render(<Timeline areaId="yaba" refreshKey="a" />);
+      await screen.findByText(/No status changes recorded/);
+      rerender(<Timeline areaId="yaba" refreshKey="b" />);
+      await vi.waitFor(() => expect(calls.length).toBe(2));
+    } finally {
+      globalThis.fetch = orig;
+    }
   });
 });

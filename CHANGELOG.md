@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — sensors & evidence v2 (LD-070, LD-071)
+### Added
+- Light Dey Sensor protocol v1 (`/api/sensors/heartbeat`): HMAC-signed, derived per-device secrets, replay protection, rate limit, clock window, device health, privacy-preserving storage; provisioning script; reference Raspberry Pi client; SENSORS.md.
+- Status model v2: Confirmed (measured/official) · Likely · Reported · Conflicting · Estimate · Not enough current evidence; `evidenceType` on every item.
+- IODA Lagos connectivity adapter (opt-in, awaiting permission); device-provider and rejected sources in the registry.
+- Timeline API + "Recent changes" on area pages; sensor coverage; "Help confirm this area"; /sensors page.
+### Changed
+- One fresh verified report ⇒ Reported (no 3-person wait); verified reports alone never "Confirmed" (⇒ Likely when corroborated). Human partners are tier 2.
+- Migration runner re-applies changed seeds after new migrations.
+
 ## [Unreleased] — evidence UI (LD-043)
 ### Fixed (Qodo review of PR #4)
 - "Source" links only for https URLs on trusted official hosts; off-site RSS links are never stored.

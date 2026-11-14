@@ -44,7 +44,7 @@ export default async function Home() {
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {[
             { icon: Zap, t: "1. Neighbours report", d: "Tap LIGHT DEY or NO LIGHT for your area. No account needed. Location is optional." },
-            { icon: ShieldCheck, t: "2. Evidence, not guesses", d: `An area turns green or red when ${STATUS_CONFIG.confirmationThreshold}+ different people agree within the hour, or official grid data confirms an outage. Mixed reports show yellow.` },
+            { icon: ShieldCheck, t: "2. Evidence, not guesses", d: `Opt-in sensors measure grid power, official grid data confirms outages, and ${STATUS_CONFIG.confirmationThreshold}+ neighbours (or a verified reporter) can report. Every status says which.` },
             { icon: MapPinned, t: "3. You check before you go", d: "Every status shows its source, time and confidence. Old reports fade to grey — we never show stale data or estimates as live." },
           ].map(({ icon: Icon, t, d }) => (
             <div key={t} className="rounded-2xl border border-line bg-surface p-6">

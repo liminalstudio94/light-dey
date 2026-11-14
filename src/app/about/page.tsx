@@ -14,11 +14,12 @@ export default function About() {
       </p>
       <h2>What the map shows</h2>
       <ul>
-        <li><strong>Confirmed outage / Confirmed light dey</strong> (dark ring): official data or verified reporters.</li>
-        <li><strong className="text-on">Reported: light dey</strong> / <strong className="text-off">Reported: no light</strong>: at least {c.confirmationThreshold} different people agreed in the last {c.reportingWindowMinutes} minutes. Not official.</li>
+        <li><strong>Confirmed outage / Confirmed power available</strong> (dark ring): measured by a healthy <a className="text-brand" href="/sensors">Light Dey sensor</a>, or official outage data.</li>
+        <li><strong>Likely outage / Likely power available</strong> (dashed ring): independent but indirect evidence — e.g. a sensor behind a generator changeover, or two verified reporters agreeing.</li>
+        <li><strong className="text-on">Reported: light dey</strong> / <strong className="text-off">Reported: no light</strong>: at least {c.confirmationThreshold} different people agreed in the last {c.reportingWindowMinutes} minutes, or one fresh verified reporter. Not official or measured.</li>
         <li><strong className="text-unsure">Conflicting reports</strong>: sources or neighbours disagree right now.</li>
         <li><strong>Estimate</strong> (dashed): a pattern from past reports at this time of day. Never live.</li>
-        <li><strong className="text-unknown">Unknown</strong>: not enough verified data. We say why on each area page.</li>
+        <li><strong className="text-unknown">Not enough current evidence</strong>: no sensor, official outage data or recent report. We say why, and ask you to help confirm.</li>
       </ul>
       <h2>Freshness</h2>
       <p>Fresh: up to {c.freshness.freshMaxMinutes} min · Recent: up to {c.freshness.recentMaxMinutes} min · Ageing: up to {c.freshness.ageingMaxMinutes} min · Stale: older. Stale reports never count as live.</p>

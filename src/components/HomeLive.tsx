@@ -31,7 +31,8 @@ export function HomeLive({ initial }: { initial: Overview }) {
     { state: "LIGHT", label: "Light dey", total: n("CONFIRMED_ON") + n("LIKELY_ON") + n("COMMUNITY_ON"), detail: `${n("CONFIRMED_ON")} confirmed · ${n("LIKELY_ON")} likely · ${n("COMMUNITY_ON")} reported` },
     { state: "NO_LIGHT", label: "No light", total: n("CONFIRMED_OFF") + n("LIKELY_OFF") + n("COMMUNITY_OFF"), detail: `${n("CONFIRMED_OFF")} confirmed · ${n("LIKELY_OFF")} likely · ${n("COMMUNITY_OFF")} reported` },
     { state: "UNCERTAIN", label: "Conflicting", total: n("CONFLICTING"), detail: "sources disagree" },
-    { state: "UNKNOWN", label: "Unknown", total: n("UNKNOWN"), detail: n("ESTIMATED_ON") + n("ESTIMATED_OFF") ? `+ ${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} more with only a historical estimate` : "not enough verified data" },
+    // Every area without live evidence: Unknown plus prediction-only areas (the detail says how many are predictions).
+    { state: "UNKNOWN", label: "No current evidence", total: n("UNKNOWN") + n("ESTIMATED_ON") + n("ESTIMATED_OFF"), detail: n("ESTIMATED_ON") + n("ESTIMATED_OFF") ? `${n("ESTIMATED_ON") + n("ESTIMATED_OFF")} of these have only a historical prediction` : "help confirm these areas" },
   ];
 
   return (

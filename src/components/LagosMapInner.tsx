@@ -49,6 +49,7 @@ export default function LagosMapInner({ statuses, now, height = 460, focusId }: 
                 <p className="font-display text-base font-bold text-ink">{a.name}</p>
                 <p className={`mt-0.5 text-sm font-semibold ${m.text}`}>{ms.label}</p>
                 {s.explanation && <p className="mt-1 text-xs text-ink-2">{s.explanation}</p>}
+                {s.sensors && s.sensors.total > 0 && <p className="mt-1 text-[11px] text-ink-3">Sensors: {s.sensors.online} online, {s.sensors.offline} offline</p>}
                 <p className="mt-1 text-xs text-ink-3">{s.recentReports} report{s.recentReports === 1 ? "" : "s"} in the last hour · {timeAgo(s.lastReportAt, now)}</p>
                 <p className="mt-1 text-[11px] text-ink-3">Approximate area centre</p>
                 <Link href={`/area/${a.id}`} className="mt-2 inline-block text-xs font-semibold text-brand">See details & history →</Link>

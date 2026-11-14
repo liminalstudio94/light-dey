@@ -34,3 +34,14 @@ describe("HomeLive (Qodo re-review on PR #4)", () => {
     expect(screen.getByText(/Ikeja Electric: 493 MW(?! \(as at)/)).toBeInTheDocument();
   });
 });
+
+describe("HomeLive (Qodo pass 5 on PR #6)", () => {
+  it("the 'No current evidence' tile counts prediction-only areas too", () => {
+    const o = overview(null);
+    o.mapCounts = { ...o.mapCounts, UNKNOWN: 38, ESTIMATED_ON: 2, CONFLICTING: 1 } as never;
+    render(<HomeLive initial={o} />);
+    const tile = screen.getByText("No current evidence").closest("div")!;
+    expect(tile).toHaveTextContent("40");
+    expect(tile).toHaveTextContent("2 of these have only a historical prediction");
+  });
+});

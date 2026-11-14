@@ -11,7 +11,7 @@ export default async function MapPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-8">
       <h1 className="font-display text-4xl font-extrabold tracking-tight">Live electricity map</h1>
-      <p className="mt-2 max-w-2xl text-ink-2">Ringed dots are confirmed by official data or verified reporters; plain green/red means {STATUS_CONFIG.confirmationThreshold}+ neighbours agreed in the last hour; yellow means sources disagree; dashed is a historical estimate; grey means not enough verified data.</p>
+      <p className="mt-2 max-w-2xl text-ink-2">Dark-ringed dots are confirmed (measured by a sensor or official data); dashed rings are likely (indirect evidence); plain green/red is reported ({STATUS_CONFIG.confirmationThreshold}+ neighbours or a verified reporter); yellow means sources disagree; hollow is a historical prediction; grey means not enough current evidence.</p>
       <div className="mt-6">
         <MapPageClient initial={overview} />
       </div>

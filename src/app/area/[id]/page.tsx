@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!area) return {};
   const overview = await getOverview();
   const s = overview.statuses.find((x) => x.areaId === id);
-  const label = s?.mapState ? MAP_STATE_META[s.mapState].label : "Unknown";
+  const label = s?.mapState ? MAP_STATE_META[s.mapState].label : "Not enough current evidence";
   return {
     title: `Is there light in ${area.name}? ${label}`,
     description: `Live community-reported electricity status for ${area.name}, ${area.lga} LGA, Lagos. Sources and confidence shown for every status.`,
