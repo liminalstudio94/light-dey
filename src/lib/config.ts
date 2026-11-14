@@ -56,4 +56,8 @@ export const EVIDENCE_CONFIG = {
   /** Official notices are linked on area pages for this long. */
   noticeMaxAgeDays: 14,
   estimate: { minSamples: 6, minProbability: 0.7, windowDays: 30 },
+  /** Freshness labels for official readings (they publish about hourly, unlike minute-by-minute reports). */
+  officialFreshness: { freshMaxMinutes: 30, recentMaxMinutes: 60, ageingMaxMinutes: 90 },
+  /** A deciding official reading older than this lowers confidence from high to medium. */
+  officialHighConfidenceMaxMinutes: 60,
 } as const;

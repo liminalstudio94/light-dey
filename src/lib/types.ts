@@ -128,9 +128,11 @@ export interface HourPattern {
 }
 
 export interface GridContext {
+  /** Newest reading time; each figure also carries its own time. */
   asOf: string;
   totalMw: number | null;
-  discos: { id: string; name: string; mw: number }[];
+  totalAsOf: string | null;
+  discos: { id: string; name: string; mw: number; asOf: string }[];
   sourceUrl: string;
   collapse: boolean;
 }
