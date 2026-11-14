@@ -41,7 +41,7 @@ export class MemoryStore implements DataStore {
   async listObservations(now: Date) {
     return this.observations.filter((o) => Date.parse(o.validUntil) >= now.getTime() && (getSource(o.sourceId)?.active || this.partnerTier(o.sourceId) !== undefined));
   }
-  async upsertObservations(rows: NewObservation[]) {
+  async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}) {
     let n = 0;
     for (const r of rows) {
       const i = this.observations.findIndex((o) => o.sourceId === r.sourceId && o.externalId === r.externalId);
@@ -55,6 +55,7 @@ export class MemoryStore implements DataStore {
         this.observations[i] = row;
       } else this.observations.push(row);
       n++;
+      if (opts.audit) this.events.push({ event: opts.audit.event, actor: opts.audit.actor });
     }
     return n;
   }
@@ -104,6 +105,7 @@ export class MemoryStore implements DataStore {
   events: { event: string; actor: string; note?: string }[] = [];
   async consumePartnerQuota(keyId: string, limit: number, now: Date) {
     const recent = (this.quota.get(keyId) ?? []).filter((t) => t > now.getTime() - 3_600_000);
+    this.quota.set(keyId, recent); // bounded, like the Postgres prune
     if (recent.length >= limit) return false;
     this.quota.set(keyId, [...recent, now.getTime()]);
     return true;

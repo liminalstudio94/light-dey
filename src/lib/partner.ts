@@ -63,12 +63,11 @@ export async function ingestPartnerObservation(store: DataStore, authHeader: str
         validUntil: new Date(t + EVIDENCE_CONFIG.partnerMaxAgeMinutes * 60_000).toISOString(),
         neighbourhoodIds: [],
       },
-    ]);
+    ], { audit: { event: "partner_ingested", actor: `key:${partner.keyId}` } });
   } catch (e) {
     // Concurrent submissions that passed the pre-check still can't move a claim to another area.
     if (e instanceof ObservationScopeConflict) return { ok: false, status: 409, code: "external_id_conflict", message: "externalId was already used for a different neighbourhood" };
     throw e;
   }
-  if (written) await store.recordVerificationEvent({ sourceId: partner.sourceId, observationExternalId: o.externalId, event: "partner_ingested", actor: `key:${partner.keyId}` });
   return { ok: true, written: written > 0 };
 }

@@ -46,8 +46,11 @@ export interface DataStore {
   // ---- Evidence ----
   /** Observations not yet expired at `now` (valid_until >= now), with tier and notice mentions. */
   listObservations(now: Date): Promise<Observation[]>;
-  /** Idempotent on (sourceId, externalId). Returns rows inserted or changed. */
-  upsertObservations(rows: NewObservation[]): Promise<number>;
+  /**
+   * Idempotent on (sourceId, externalId). Returns rows inserted or changed.
+   * `audit`, if given, is written in the SAME transaction for every changed row, so a claim is never live without its audit trail.
+   */
+  upsertObservations(rows: NewObservation[], opts?: { audit?: { event: "partner_ingested"; actor: string } }): Promise<number>;
   /**
    * Atomically claims a source for a run: never while another run holds it
    * (running lock, even when forced), and only once its interval has passed unless forced.
