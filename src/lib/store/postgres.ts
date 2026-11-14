@@ -90,12 +90,12 @@ export class PostgresStore implements DataStore {
       with newest as (
         select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
         from lightdey.observations
-        where kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
+        where kind <> 'notice' and withdrawn_at is null and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
         order by source_id, kind, scope, coalesce(scope_ref, ''), observed_at desc
       ), picked as (
         select * from newest where valid_until >= ${now}
         union all
-        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
+        select * from lightdey.observations where valid_until >= ${now} and kind = 'notice' and withdrawn_at is null
       )
       select o.id, o.source_id, o.external_id, o.scope, o.scope_ref, o.kind, o.status, o.value_num, o.title, o.url, o.observed_at, o.valid_until,
              s.trust_tier as tier, s.kind as source_kind, array_remove(array_agg(onb.neighbourhood_id), null) as areas

@@ -25,7 +25,7 @@ function overview(grid: Overview["grid"]): Overview {
 describe("HomeLive (Qodo re-review on PR #4)", () => {
   it("counts conflicting areas as having live evidence (#2)", () => {
     render(<HomeLive initial={overview(null)} />);
-    expect(screen.getByText(/1 of 41 areas have live evidence right now/)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 41 areas have current evidence/)).toBeInTheDocument();
   });
   it("labels each grid figure with its own time when they differ (#3)", () => {
     const t = (min: number) => new Date(NOW.getTime() - min * 60_000).toISOString();

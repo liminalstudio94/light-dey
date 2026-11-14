@@ -192,7 +192,8 @@ export function resolveAreaStatus({ community, observations, sensors = [], patte
 
   // ---- Context that never sets status ----
   for (const o of relevant) {
-    if (o.kind === "disco_allocation" && o.status === null) {
+    // A reading without a usable MW value says nothing — never present it as a measured figure.
+    if (o.kind === "disco_allocation" && o.status === null && o.valueNum !== null && Number.isFinite(o.valueNum)) {
       const d = DISCOS[o.scopeRef as keyof typeof DISCOS];
       context.push(item(o, "context", `${d?.name ?? o.scopeRef} is receiving ${Math.round(o.valueNum ?? 0)} MW from the national grid. That doesn't mean every feeder in ${area?.name ?? "this area"} has light (load shedding).`));
     } else if (o.kind === "notice") {
@@ -397,13 +398,14 @@ export function gridContextFrom(observations: Observation[], now: Date = new Dat
   const fresh = latestPerMeasure(grid.map((o) => normalizeGrid(o, cfg))).filter((o) => isActive(o, t, cfg));
   if (!fresh.length) return null;
   const total = fresh.find((o) => o.kind === "grid_total");
+  const hasMw = (o: Observation) => o.valueNum !== null && Number.isFinite(o.valueNum);
   const discos = (Object.keys(DISCOS) as (keyof typeof DISCOS)[])
-    .map((id) => ({ id, o: fresh.find((o) => o.kind === "disco_allocation" && o.scopeRef === id) }))
+    .map((id) => ({ id, o: fresh.find((o) => o.kind === "disco_allocation" && o.scopeRef === id && hasMw(o)) }))
     .filter((d) => d.o)
-    .map((d) => ({ id: d.id, name: DISCOS[d.id].name, mw: d.o!.valueNum ?? 0, asOf: d.o!.observedAt }));
+    .map((d) => ({ id: d.id, name: DISCOS[d.id].name, mw: d.o!.valueNum as number, asOf: d.o!.observedAt }));
   return {
     asOf: fresh.map((o) => o.observedAt).sort().at(-1)!,
-    totalMw: total?.valueNum ?? null,
+    totalMw: total && hasMw(total) ? (total.valueNum as number) : null,
     totalAsOf: total?.observedAt ?? null,
     discos,
     sourceUrl: getSource("niso_niggrid")?.url ?? "https://www.niggrid.org/",
