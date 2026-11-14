@@ -7,8 +7,10 @@ import { fetchWithRetry, type Fetcher } from "@/lib/ingest/http";
 import { areasMentioned, noticeObservations, parseRss } from "@/lib/ingest/ikejaNotices";
 import { niggridObservations, parseDiscoLoadProfile, parseLagosDateTime } from "@/lib/ingest/niggrid";
 import { ADAPTERS, runAdapter, snapshotChanges } from "@/lib/ingest/runner";
+import { refreshDueSources } from "@/lib/server/refresh";
 import { hashKey } from "@/lib/partner";
 import { MemoryStore } from "@/lib/store/memory";
+import { EVIDENCE_CONFIG } from "@/lib/config";
 
 const NIGGRID = readFileSync("tests/fixtures/niggrid-disco-load-profile.html", "utf8");
 const FEED = readFileSync("tests/fixtures/ikeja-electric-feed.xml", "utf8");
@@ -35,7 +37,7 @@ describe("NIGGRID parser (real page fixture)", () => {
     expect(dark.find((o) => o.scopeRef === "eko")?.status).toBe("off");
     const collapse = niggridObservations({ ...p, totalMw: 120 });
     expect(collapse[0]).toMatchObject({ kind: "grid_total", status: "off", scope: "national" });
-    expect(Date.parse(obs[0].validUntil) - Date.parse(obs[0].observedAt)).toBe(45 * 60_000);
+    expect(Date.parse(obs[0].validUntil) - Date.parse(obs[0].observedAt)).toBe(EVIDENCE_CONFIG.officialMaxAgeMinutes * 60_000);
   });
   it("fails loudly (no data) when the layout changes", () => {
     expect(() => parseDiscoLoadProfile("<html>maintenance</html>", AT)).toThrow(/timestamp not found/);
@@ -43,6 +45,14 @@ describe("NIGGRID parser (real page fixture)", () => {
     expect(() => parseDiscoLoadProfile(NIGGRID.replace("482.00", "n/a"), AT)).toThrow(/bad row/);
     expect(() => parseDiscoLoadProfile(NIGGRID, new Date("2026-11-13T10:00:00Z"))).toThrow(/future/);
     expect(() => parseDiscoLoadProfile(NIGGRID.replace("482.00", "999.00"), AT)).toThrow(/page total/);
+    // Qodo #3-3: the Total row is the integrity check — missing, duplicated or truncated tables fail.
+    const noTotal = NIGGRID.replace(/<tr[^>]*>\s*<td>Total:[\s\S]*?<\/tr>/, "");
+    expect(noTotal).not.toMatch(/Total:/);
+    expect(() => parseDiscoLoadProfile(noTotal, AT)).toThrow(/Total row missing/);
+    const twoTotals = NIGGRID.replace(/(<tr[^>]*>\s*<td>Total:[\s\S]*?<\/tr>)/, "$1$1");
+    expect(() => parseDiscoLoadProfile(twoTotals, AT)).toThrow(/more than one Total/);
+    const truncated = NIGGRID.replace(/<tr[^>]*>\s*<td>Abuja Disco[\s\S]*?<\/tr>/, "");
+    expect(() => parseDiscoLoadProfile(truncated, AT)).toThrow(/page total/);
   });
 });
 
@@ -53,6 +63,8 @@ describe("Ikeja Electric notices (real feed fixture)", () => {
     const shomolu = items.find((i) => /Shomolu/.test(i.title + i.text))!;
     expect(areasMentioned(shomolu.title + " " + shomolu.text)).toContain("shomolu");
     expect(areasMentioned("Victoria Garden City")).toEqual([]); // no 'vi' alias false positive
+    expect(areasMentioned("Outage in Lekki this weekend")).toEqual([]); // Qodo #3-6: 'lekki' is shared by two areas
+    expect(areasMentioned("Outage in Lekki Phase 1")).toEqual(["lekki-phase-1"]);
     expect(areasMentioned("Yaba and Surulere")).toEqual(["yaba", "surulere"]);
   });
   it("keeps only recent notices that name an area, as context (no status)", () => {
@@ -66,8 +78,11 @@ describe("Ikeja Electric notices (real feed fixture)", () => {
     }
     expect(noticeObservations(parseRss(FEED), new Date("2027-01-01T00:00:00Z"))).toEqual([]); // expired
   });
-  it("rejects non-RSS responses", () => {
+  it("rejects non-RSS and truncated responses, accepts a valid empty feed (Qodo #3-5)", () => {
     expect(() => parseRss("<html>blocked</html>")).toThrow(/not RSS/);
+    expect(() => parseRss(FEED.slice(0, Math.floor(FEED.length / 2)))).toThrow(/truncated|<item>/);
+    expect(() => parseRss(FEED.slice(0, FEED.indexOf("</item>")) + "</channel></rss>")).toThrow(/<item>/);
+    expect(parseRss('<?xml version="1.0"?><rss version="2.0"><channel><title>x</title></channel></rss>')).toEqual([]);
   });
 });
 
@@ -78,12 +93,20 @@ describe("runner: retries, leases, failures, idempotency", () => {
   it("retries 5xx then succeeds; gives up after 3 attempts; does not retry 404", async () => {
     let calls = 0;
     const flaky: Fetcher = async () => (++calls < 3 ? { status: 503, text: "" } : { status: 200, text: "ok" });
-    expect((await fetchWithRetry(flaky, "u", [], 3, 1)).attempts).toBe(3);
+    expect((await fetchWithRetry(flaky, "u", [], { baseDelayMs: 1 })).attempts).toBe(3);
     calls = 0;
-    await expect(fetchWithRetry(async () => ({ status: 500, text: "" }), "u", [], 3, 1)).rejects.toThrow(/HTTP 500/);
+    await expect(fetchWithRetry(async () => ({ status: 500, text: "" }), "u", [], { baseDelayMs: 1 })).rejects.toThrow(/HTTP 500/);
     let n404 = 0;
-    await expect(fetchWithRetry(async () => (n404++, { status: 404, text: "" }), "u", [], 3, 1)).rejects.toThrow();
+    await expect(fetchWithRetry(async () => (n404++, { status: 404, text: "" }), "u", [], { baseDelayMs: 1 })).rejects.toThrow();
     expect(n404).toBe(1);
+  });
+
+  it("stops retrying at the deadline so slow sources can't overrun the function (Qodo #3-11)", async () => {
+    let calls = 0;
+    const slow: Fetcher = async () => (calls++, { status: 503, text: "" });
+    await expect(fetchWithRetry(slow, "u", [], { baseDelayMs: 50, deadline: Date.now() + 20 })).rejects.toThrow();
+    expect(calls).toBe(1);
+    await expect(fetchWithRetry(slow, "u", [], { deadline: Date.now() - 1 })).rejects.toThrow(/deadline/);
   });
 
   it("writes observations, records the run, and is idempotent on re-run", async () => {
@@ -110,6 +133,34 @@ describe("runner: retries, leases, failures, idempotency", () => {
     expect(store.runs[0].result.error).toMatch(/not RSS/);
   });
 
+  it("forced runs never fetch the same source concurrently, and the lock is released after (Qodo #3-9)", async () => {
+    let fetches = 0;
+    const counting: Fetcher = async () => (fetches++, { status: 200, text: NIGGRID });
+    const [a, b] = await Promise.all([runAdapter(store, niso, { now: AT, fetcher: counting, force: true }), runAdapter(store, niso, { now: AT, fetcher: counting, force: true })]);
+    expect([a.status, b.status].sort()).toEqual(["ok", "skipped"]);
+    expect(fetches).toBe(1);
+    expect((await runAdapter(store, niso, { now: AT, fetcher: counting, force: true })).status).toBe("ok");
+  });
+
+  it("a recovery reading clears the outage right away (Qodo #3-1)", async () => {
+    const { aggregateAreaStatus } = await import("@/lib/status");
+    const { resolveAreaStatus } = await import("@/lib/evidence");
+    const ajah = async (now: Date) => resolveAreaStatus({ community: aggregateAreaStatus("ajah", [], now), observations: await store.listObservations(now), now }).mapState;
+    const dark = NIGGRID.replace("<td>Eko Disco</td><td>482.00</td>", "<td>Eko Disco</td><td>0.00</td>").replace("3,216.00", "2,734.00");
+    await runAdapter(store, niso, { now: AT, fetcher: ok(dark), force: true });
+    expect(await ajah(AT)).toBe("CONFIRMED_OFF");
+    const later = new Date(AT.getTime() + 15 * 60_000);
+    const back = NIGGRID.replace("20:07:00", "20:30:00");
+    await runAdapter(store, niso, { now: later, fetcher: ok(back), force: true });
+    expect(await ajah(later)).toBe("UNKNOWN");
+  });
+
+  it("concurrent snapshot writes don't duplicate (Qodo #3-8)", async () => {
+    const s = (areaId: string) => ({ areaId, mapState: "UNKNOWN", confidence: "none", freshness: "none" }) as never;
+    const [x, y] = await Promise.all([snapshotChanges(store, [s("yaba")]), snapshotChanges(store, [s("yaba")])]);
+    expect(x + y).toBe(1);
+  });
+
   it("can be disabled with its kill switch", async () => {
     process.env.SOURCE_NISO_ENABLED = "0";
     try {
@@ -129,10 +180,12 @@ describe("runner: retries, leases, failures, idempotency", () => {
 describe("partner ingestion API", () => {
   const g = globalThis as unknown as { __lightDeyStore?: MemoryStore };
   const KEY = "ldp_test_key_0123456789abcdefghijkl";
+  const KEY2 = "ldp_other_key_0123456789abcdefghijk";
   let store: MemoryStore;
   beforeEach(() => {
     store = new MemoryStore();
-    store.partnerKeys.set(hashKey(KEY), { sourceId: "verified:ada", tier: 2 });
+    store.partnerKeys.set(hashKey(KEY), { keyId: "k1", sourceId: "verified:ada", tier: 2, allowedAreas: ["yaba"] });
+    store.partnerKeys.set(hashKey(KEY2), { keyId: "k2", sourceId: "verified:ada", tier: 2, allowedAreas: ["yaba"] });
     g.__lightDeyStore = store;
   });
   const call = (body: unknown, key: string | null = KEY) =>
@@ -150,6 +203,22 @@ describe("partner ingestion API", () => {
     expect((await call(body({ observedAt: new Date(Date.now() - 2 * 3_600_000).toISOString() }))).status).toBe(400);
     expect((await call(body({ externalId: "bad id!" }))).status).toBe(400);
   });
+  it("rejects areas outside the key's approved coverage (Qodo #3-10)", async () => {
+    const r = await call(body({ neighbourhoodId: "ikeja" }));
+    expect(r.status).toBe(403);
+    expect(store.observations).toHaveLength(0);
+  });
+  it("an externalId stays bound to its first area (Qodo #3-2)", async () => {
+    store.partnerKeys.get(hashKey(KEY))!.allowedAreas.push("surulere");
+    expect((await call(body({ externalId: "dup" }))).status).toBe(201);
+    expect((await call(body({ externalId: "dup", neighbourhoodId: "surulere" }))).status).toBe(409);
+    expect(store.observations[0].scopeRef).toBe("yaba");
+  });
+  it("hourly quota is per key and counts updates to the same externalId (Qodo #3-4)", async () => {
+    for (let i = 0; i < 120; i++) expect(await store.consumePartnerQuota("k1", 120, new Date())).toBe(true);
+    expect((await call(body({ status: "on" }))).status).toBe(429);
+    expect((await call(body({ externalId: "other" }), KEY2)).status).toBe(201); // separate key, separate allowance
+  });
   it("stores a tier-2 observation once (idempotent) and logs a verification event", async () => {
     const b = body();
     expect((await call(b)).status).toBe(201);
@@ -157,6 +226,28 @@ describe("partner ingestion API", () => {
     expect(store.observations).toHaveLength(1);
     expect(store.observations[0]).toMatchObject({ sourceId: "verified:ada", tier: 2, scopeRef: "yaba", status: "off" });
     expect(store.events).toHaveLength(1);
+  });
+});
+
+describe("refresh orchestration", () => {
+  it("the opportunistic path skips overview + snapshots when nothing ran (Qodo #3-12)", async () => {
+    const g = globalThis as unknown as { __lightDeyStore?: MemoryStore };
+    const store = new MemoryStore();
+    g.__lightDeyStore = store;
+    process.env.SOURCE_NISO_ENABLED = "0";
+    process.env.SOURCE_IKEJA_NOTICES_ENABLED = "0";
+    try {
+      await refreshDueSources({ snapshot: "if-changed" }); // takes the hourly patterns lease
+      const second = await refreshDueSources({ snapshot: "if-changed" });
+      expect(second.snapshots).toBe(0);
+      expect(second.mapCounts).toBeNull();
+      expect(store.snapshots).toHaveLength(41); // only the first call wrote
+      const errors = (await refreshDueSources({ snapshot: "always" })).errors;
+      expect(errors).toBe(0);
+    } finally {
+      delete process.env.SOURCE_NISO_ENABLED;
+      delete process.env.SOURCE_IKEJA_NOTICES_ENABLED;
+    }
   });
 });
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getSource } from "../sources/registry";
 import type { HourPattern, MapState, Observation, Report } from "../types";
-import type { DataStore, NewObservation, NewReport, RunResult, SnapshotRow } from "./types";
+import type { DataStore, NewObservation, NewReport, PartnerKey, RunResult, SnapshotRow } from "./types";
 
 /**
  * In-process store for local development and tests. Starts EMPTY — it never
@@ -13,9 +13,11 @@ export class MemoryStore implements DataStore {
   observations: Observation[] = [];
   runs: { sourceId: string; startedAt: Date; result: RunResult }[] = [];
   private leases = new Map<string, number>();
+  private running = new Map<string, number>();
+  private quota = new Map<string, number[]>();
   private patterns: HourPattern[] = [];
   snapshots: (SnapshotRow & { at: Date })[] = [];
-  partnerKeys = new Map<string, { sourceId: string; tier: 1 | 2 | 3 | 4 }>();
+  partnerKeys = new Map<string, PartnerKey>();
 
   async insertReport(r: NewReport): Promise<Report> {
     const row: Report = { id: randomUUID(), areaId: r.areaId, status: r.status, reporterId: r.reporterId, networkHash: r.networkHash, createdAt: r.createdAt, verification: r.verification, comment: r.comment ?? null };
@@ -58,11 +60,17 @@ export class MemoryStore implements DataStore {
     for (const v of this.partnerKeys.values()) if (v.sourceId === sourceId) return v.tier;
     return undefined;
   }
-  async acquireLease(sourceId: string, minIntervalMinutes: number, now: Date) {
+  async acquireLease(sourceId: string, minIntervalMinutes: number, now: Date, opts: { force?: boolean; runningMinutes?: number } = {}) {
+    const t = now.getTime();
+    if ((this.running.get(sourceId) ?? 0) > t) return false;
     const last = this.leases.get(sourceId);
-    if (last !== undefined && now.getTime() - last < minIntervalMinutes * 60_000) return false;
-    this.leases.set(sourceId, now.getTime());
+    if (!opts.force && last !== undefined && t - last < minIntervalMinutes * 60_000) return false;
+    this.leases.set(sourceId, t);
+    this.running.set(sourceId, t + (opts.runningMinutes ?? 2) * 60_000);
     return true;
+  }
+  async releaseLease(sourceId: string) {
+    this.running.delete(sourceId);
   }
   async recordRun(sourceId: string, startedAt: Date, result: RunResult) {
     this.runs.push({ sourceId, startedAt, result });
@@ -78,16 +86,27 @@ export class MemoryStore implements DataStore {
     for (const s of this.snapshots) m.set(s.areaId, s.mapState);
     return m;
   }
-  async insertSnapshots(rows: SnapshotRow[]) {
+  async recordSnapshotChanges(rows: SnapshotRow[]) {
+    // No await between read and write: atomic within this process, like the Postgres advisory lock.
+    const prev = new Map<string, MapState>();
+    for (const x of this.snapshots) prev.set(x.areaId, x.mapState);
+    const changed = rows.filter((r) => prev.get(r.areaId) !== r.mapState);
     const at = new Date();
-    this.snapshots.push(...rows.map((r) => ({ ...r, at })));
+    this.snapshots.push(...changed.map((r) => ({ ...r, at })));
+    return changed.length;
   }
   async findPartnerKey(keyHash: string) {
     return this.partnerKeys.get(keyHash) ?? null;
   }
   events: { event: string; actor: string; note?: string }[] = [];
-  async countObservationsSince(sourceId: string, since: Date) {
-    return this.observations.filter((o) => o.sourceId === sourceId && Date.parse(o.observedAt) >= since.getTime()).length;
+  async consumePartnerQuota(keyId: string, limit: number, now: Date) {
+    const recent = (this.quota.get(keyId) ?? []).filter((t) => t > now.getTime() - 3_600_000);
+    if (recent.length >= limit) return false;
+    this.quota.set(keyId, [...recent, now.getTime()]);
+    return true;
+  }
+  async observationScope(sourceId: string, externalId: string) {
+    return this.observations.find((o) => o.sourceId === sourceId && o.externalId === externalId)?.scopeRef;
   }
   async recordVerificationEvent(e: { event: string; actor: string; note?: string }) {
     this.events.push(e);

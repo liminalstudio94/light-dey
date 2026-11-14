@@ -10,6 +10,15 @@
 - Share text never upgrades reported → confirmed or estimate → live.
 
 ## [Unreleased] — ingestion (LD-041)
+### Fixed (Qodo review of PR #3)
+- Recoveries clear outages immediately (newest reading supersedes; sequence test).
+- NIGGRID parser requires exactly one Total row matching the DisCo sum, and rejects duplicate rows.
+- RSS parser rejects truncated/malformed feeds; ambiguous shared aliases (e.g. "lekki") no longer link areas.
+- Partner keys: per-key approved areas (403 outside), externalId bound to its first area (409), atomic per-key hourly quota (`partner_key_writes`).
+- Source runs hold an in-progress lock even when forced; adapters run in parallel with an overall deadline.
+- Snapshots are compared and inserted atomically; the opportunistic refresh skips overview/snapshots unless a source ran.
+- The scheduled workflow fails when any source errors.
+- Migration `20261114000000_ingestion_controls.sql`.
 ### Added
 - Adapters for the two verified public sources: NISO NIGGRID DisCo load profile (10 min) and Ikeja Electric notices RSS (hourly), with strict parsers that fail closed.
 - Job runner: per-source leases (rate limit), retries with backoff, run logs in `source_runs`, kill switches, idempotent upserts.
@@ -19,6 +28,17 @@
 - CI workflow and Qodo config.
 
 ## [Unreleased] — evidence engine (LD-040)
+### Fixed (Qodo review of PR #2)
+- Newest reading per source/measure supersedes older ones, so recoveries clear outages immediately; future-dated readings can't supersede.
+- Grid outage status is derived from the MW value and thresholds, never trusted from a stored flag; grid data never asserts light.
+- A lone verified report shows as Unknown with the reason, not as an established status.
+- Estimates only when an area has no fresh reports at all.
+- Official max age 45 → 90 min (NISO publishes about hourly).
+- Notices attach only to the areas they name.
+- Partner / verified-reporter ids never reach the public API or UI.
+- `listObservations` has no global row cap (latest per measure + active notices).
+- Upserts detect changes in every mutable column and always reconcile area links.
+- Pages keep serving community-only status if the evidence tables are missing.
 ### Added
 - Evidence model migration: sources, source_runs, observations (+ neighbourhood links), disco_service_areas, verification_events, partner_keys, status_snapshots, hourly_patterns — all in `lightdey`, RLS on.
 - Source registry (`src/lib/sources/registry.ts`) and official-only DisCo mapping (`src/lib/sources/discos.ts`), seeded by `npm run gen:seed`.

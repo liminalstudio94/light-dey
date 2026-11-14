@@ -15,6 +15,9 @@ export interface Adapter {
   fetchObservations(fetcher: Fetcher, now: Date, log: string[]): Promise<{ observations: NewObservation[]; fetched: number; attempts: number }>;
 }
 
+/** Each adapter must finish well inside the 60 s function limit; adapters run in parallel. */
+export const ADAPTER_BUDGET_MS = 30_000;
+
 /** Adapters exist only for sources we verified are publicly accessible. See SOURCES.md. */
 export const ADAPTERS: Adapter[] = [
   {
@@ -22,7 +25,7 @@ export const ADAPTERS: Adapter[] = [
     everyMinutes: 10,
     enabledEnv: "SOURCE_NISO_ENABLED",
     async fetchObservations(fetcher, now, log) {
-      const { text, attempts } = await fetchWithRetry(fetcher, NIGGRID_DISCO_URL, log);
+      const { text, attempts } = await fetchWithRetry(fetcher, NIGGRID_DISCO_URL, log, { deadline: Date.now() + ADAPTER_BUDGET_MS });
       const profile = parseDiscoLoadProfile(text, now);
       log.push(`as at ${profile.asOf}; total ${profile.totalMw} MW; ${profile.rows.length} DisCos`);
       return { observations: niggridObservations(profile), fetched: profile.rows.length, attempts };
@@ -33,7 +36,7 @@ export const ADAPTERS: Adapter[] = [
     everyMinutes: 60, // robots.txt asks for a 10s crawl delay; hourly is far gentler
     enabledEnv: "SOURCE_IKEJA_NOTICES_ENABLED",
     async fetchObservations(fetcher, now, log) {
-      const { text, attempts } = await fetchWithRetry(fetcher, IKEJA_FEED_URL, log);
+      const { text, attempts } = await fetchWithRetry(fetcher, IKEJA_FEED_URL, log, { deadline: Date.now() + ADAPTER_BUDGET_MS });
       const items = parseRss(text);
       const observations = noticeObservations(items, now);
       log.push(`${items.length} items; ${observations.length} recent notices name a supported area`);
@@ -52,8 +55,9 @@ export async function runAdapter(store: DataStore, a: Adapter, opts: { now?: Dat
   const now = opts.now ?? new Date();
   const log: string[] = [];
   if (!enabled(a)) return { sourceId: a.sourceId, status: "skipped", attempts: 0, itemsFetched: 0, itemsWritten: 0, log: [`disabled via ${a.enabledEnv}=0`] };
-  if (!(await store.acquireLease(a.sourceId, opts.force ? 0 : a.everyMinutes, now))) {
-    return { sourceId: a.sourceId, status: "skipped", attempts: 0, itemsFetched: 0, itemsWritten: 0, log: ["not due yet (lease held)"] };
+  // force skips the interval but never the running lock, so a source is never fetched twice at once.
+  if (!(await store.acquireLease(a.sourceId, a.everyMinutes, now, { force: opts.force, runningMinutes: 2 }))) {
+    return { sourceId: a.sourceId, status: "skipped", attempts: 0, itemsFetched: 0, itemsWritten: 0, log: ["not due yet, or another run is in progress"] };
   }
   let result: RunResult;
   try {
@@ -71,6 +75,11 @@ export async function runAdapter(store: DataStore, a: Adapter, opts: { now?: Dat
     await store.recordRun(a.sourceId, now, result);
   } catch (e) {
     console.error(`[ingest:${a.sourceId}] could not record run`, e);
+  }
+  try {
+    await store.releaseLease(a.sourceId);
+  } catch (e) {
+    console.error(`[ingest:${a.sourceId}] could not release lease (expires on its own)`, e);
   }
   return { sourceId: a.sourceId, ...result };
 }
@@ -91,12 +100,9 @@ export async function recomputePatterns(store: DataStore, now: Date = new Date()
   return rows.length;
 }
 
-/** Appends a snapshot for each area whose map state changed since the last snapshot. */
+/** Appends a snapshot for each area whose map state changed since the last snapshot (atomic in the store). */
 export async function snapshotChanges(store: DataStore, statuses: AreaStatus[]): Promise<number> {
-  const prev = await store.latestMapStates();
-  const changed = statuses.filter((s) => s.mapState && prev.get(s.areaId) !== s.mapState);
-  await store.insertSnapshots(
-    changed.map((s) => ({ areaId: s.areaId, mapState: s.mapState!, confidence: s.confidence, freshness: s.freshness, evidence: s.evidence ?? [] })),
+  return store.recordSnapshotChanges(
+    statuses.filter((s) => s.mapState).map((s) => ({ areaId: s.areaId, mapState: s.mapState!, confidence: s.confidence, freshness: s.freshness, evidence: s.evidence ?? [] })),
   );
-  return changed.length;
 }

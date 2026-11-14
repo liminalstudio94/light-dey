@@ -22,5 +22,8 @@ jobs:
           set -euo pipefail
           code=$(curl -sS -o out.json -w '%{http_code}' --max-time 90 --retry 2 --retry-delay 10 \
             -H "Authorization: Bearer ${CRON_SECRET}" "${URL}/api/cron/refresh")
-          jq -c '{at, runs: [.runs[] | {sourceId, status, itemsWritten, error}], snapshots, mapCounts}' out.json || cat out.json
+          jq -c '{at, errors, runs: [.runs[] | {sourceId, status, itemsWritten, error}], snapshots, mapCounts}' out.json || cat out.json
           test "$code" = "200"
+          # A source that failed to refresh makes the run red ("skipped" = not due, which is fine).
+          errors=$(jq '[.runs[] | select(.status == "error")] | length' out.json)
+          if [ "$errors" -gt 0 ]; then echo "::error::$errors source(s) failed to refresh"; exit 1; fi

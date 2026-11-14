@@ -8,7 +8,7 @@ export async function GET() {
   // Opportunistic refresh after responding: leases keep it to one fetch per source interval.
   if (process.env.LIGHTDEY_ONDEMAND_REFRESH !== "0") {
     try {
-      after(() => refreshDueSources().catch((e) => console.error("[status:refresh]", e)));
+      after(() => refreshDueSources({ snapshot: "if-changed" }).catch((e) => console.error("[status:refresh]", e)));
     } catch {
       /* outside a request scope (tests) */
     }

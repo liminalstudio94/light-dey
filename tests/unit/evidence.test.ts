@@ -19,7 +19,7 @@ function obs(p: Partial<Observation> & Pick<Observation, "kind" | "scope">): Obs
     valueNum: null,
     title: null,
     url: "https://www.niggrid.org/DisCoLoadProfile",
-    validUntil: new Date(Date.parse(observedAt) + 45 * 60_000).toISOString(),
+    validUntil: new Date(Date.parse(observedAt) + EVIDENCE_CONFIG.officialMaxAgeMinutes * 60_000).toISOString(),
     neighbourhoodIds: [],
     tier: 1,
     ...p,
@@ -78,6 +78,39 @@ describe("official sources", () => {
     expect(resolve("ikeja", [], [collapse(120)]).mapState).toBe("UNKNOWN");
   });
 
+  it("an hour-old official reading still counts, since NISO publishes about hourly (Qodo #2-10)", () => {
+    expect(resolve("ikeja", [], [collapse(60)]).mapState).toBe("CONFIRMED_OFF");
+  });
+
+  it("a newer positive reading supersedes an older outage immediately (Qodo #2-3, #3-1)", () => {
+    expect(resolve("ajah", [], [disco("eko", 0, 30)]).mapState).toBe("CONFIRMED_OFF");
+    const s = resolve("ajah", [], [disco("eko", 0, 30), disco("eko", 410, 5)]);
+    expect(s.mapState).toBe("UNKNOWN");
+    expect(s.evidence?.map((e) => e.role)).toEqual(["context"]);
+    expect(resolve("yaba", [], [collapse(40), obs({ kind: "grid_total", scope: "national", valueNum: 3100, observedAt: iso(3) })]).mapState).toBe("UNKNOWN");
+  });
+
+  it("an older positive reading does not hide a newer outage", () => {
+    expect(resolve("ajah", [], [disco("eko", 410, 30), disco("eko", 0, 5)]).mapState).toBe("CONFIRMED_OFF");
+  });
+
+  it("a future-dated reading cannot supersede a real one", () => {
+    expect(resolve("ajah", [], [disco("eko", 0, 5), disco("eko", 400, -60)]).mapState).toBe("CONFIRMED_OFF");
+  });
+
+  it("grid status is derived from the MW value, never trusted from a stored flag (Qodo #2-8)", () => {
+    const lies = [
+      obs({ kind: "disco_allocation", scope: "disco", scopeRef: "eko", valueNum: 480, status: "off" }),
+      obs({ kind: "grid_total", scope: "national", valueNum: 3200, status: "on" }),
+    ];
+    const s = resolve("ajah", [], lies);
+    expect(s.mapState).toBe("UNKNOWN");
+    expect(s.evidence?.every((e) => e.role === "context" && e.status === null)).toBe(true);
+    const unflagged = obs({ kind: "disco_allocation", scope: "disco", scopeRef: "eko", valueNum: 0, status: null });
+    expect(resolve("ajah", [], [unflagged]).mapState).toBe("CONFIRMED_OFF");
+    expect(resolve("yaba", [], [obs({ kind: "grid_total", scope: "national", valueNum: 3200, status: "on" })]).mapState).not.toBe("CONFIRMED_ON");
+  });
+
   it("observations past valid_until or from the future are ignored", () => {
     const expired = { ...collapse(5), validUntil: iso(1) };
     const future = collapse(-30);
@@ -117,6 +150,9 @@ describe("official sources", () => {
   it("notices are linked as context and never set status", () => {
     const notice = obs({ sourceId: "ikeja_electric_notices", kind: "notice", scope: "disco", scopeRef: "ikeja", title: "Planned maintenance", neighbourhoodIds: ["shomolu"], observedAt: iso(60 * 24), validUntil: iso(-60 * 24 * 13) });
     expect(appliesTo(notice, "shomolu")).toBe(true);
+    // Qodo #2-5: another area under the same DisCo, or a national notice, must not inherit it.
+    expect(appliesTo(notice, "ikeja")).toBe(false);
+    expect(appliesTo({ ...notice, scope: "national", scopeRef: null }, "yaba")).toBe(false);
     const s = resolve("shomolu", [], [notice]);
     expect(s.mapState).toBe("UNKNOWN");
     expect(s.evidence?.[0]).toMatchObject({ role: "context", sourceId: "ikeja_electric_notices" });
@@ -124,16 +160,22 @@ describe("official sources", () => {
 });
 
 describe("verified reporters (tier 2)", () => {
-  it("one verified reporter alone is reported, not confirmed", () => {
-    const s = resolve("ikoyi", [], [verified("vr:1", "ikoyi", "on")]);
-    expect(s.mapState).toBe("COMMUNITY_ON");
-    expect(s.explanation).toMatch(/not yet confirmed/);
+  it("one verified reporter alone is not shown as an established status (Qodo #2-6)", () => {
+    const s = resolve("ikoyi", [], [verified("verified:ada", "ikoyi", "on")]);
+    expect(s.mapState).toBe("UNKNOWN");
+    expect(s.state).toBe("UNKNOWN");
+    expect(s.explanation).toMatch(/1 verified reporter says light dey/);
+    expect(s.evidence?.[0]).toMatchObject({ role: "supporting", sourceName: "Verified reporter" });
   });
   it("two independent verified reporters confirm", () => {
     expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off"), verified("vr:2", "ikoyi", "off")]).mapState).toBe("CONFIRMED_OFF");
   });
   it("the same verified reporter twice counts once", () => {
-    expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off", 2), verified("vr:1", "ikoyi", "off", 8)]).mapState).toBe("COMMUNITY_OFF");
+    expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off", 2), verified("vr:1", "ikoyi", "off", 8)]).mapState).toBe("UNKNOWN");
+  });
+  it("two verified reporters with their own sources (the issued key model) confirm (Qodo #2-2)", () => {
+    // scripts/partner-key.mjs issues one `verified:<slug>` source per vetted person.
+    expect(resolve("ikoyi", [], [verified("verified:ada-ikoyi", "ikoyi", "off"), verified("verified:tunde-ikoyi", "ikoyi", "off")]).mapState).toBe("CONFIRMED_OFF");
   });
   it("one verified + community confirmation of the same status confirms", () => {
     const s = resolve("ikoyi", ["a", "b", "c"].map((w, i) => rep("on", i + 1, w, { areaId: "ikoyi" })), [verified("vr:1", "ikoyi", "on")]);
@@ -145,6 +187,15 @@ describe("verified reporters (tier 2)", () => {
   });
   it("stale verified reports expire", () => {
     expect(resolve("ikoyi", [], [verified("vr:1", "ikoyi", "off", 90), verified("vr:2", "ikoyi", "off", 90)]).mapState).toBe("UNKNOWN");
+  });
+});
+
+describe("public source names", () => {
+  it("never expose partner or verified-reporter source ids (Qodo #4-9)", () => {
+    const s = resolve("ikoyi", [], [verified("verified:ada-ikoyi", "ikoyi", "off"), verified("verified:tunde-ikoyi", "ikoyi", "off")]);
+    expect(JSON.stringify(s.evidence)).not.toMatch(/ada-ikoyi|tunde-ikoyi/);
+    const partner = obs({ sourceId: "partner:acme-estate", kind: "status_report", scope: "neighbourhood", scopeRef: "ikoyi", status: "off", tier: 1 });
+    expect(resolve("ikoyi", [], [partner]).evidence?.[0].sourceName).toBe("Approved partner");
   });
 });
 
@@ -160,6 +211,12 @@ describe("estimates", () => {
   it("thin or mixed history => no estimate", () => {
     expect(estimateFrom({ areaId: "x", hour: 1, lightHours: 5, knownHours: 5 })).toBeNull(); // < 6 samples
     expect(estimateFrom({ areaId: "x", hour: 1, lightHours: 6, knownHours: 10 })).toBeNull(); // 60%
+  });
+  it("fresh reports, even below the threshold, suppress the estimate (Qodo #2-9)", () => {
+    const s = resolve("agege", [rep("off", 2, "a", { areaId: "agege" }), rep("off", 4, "b", { areaId: "agege" })], [], { light: 10, known: 10 });
+    expect(s.mapState).toBe("UNKNOWN");
+    expect(s.explanation).toMatch(/2 of 3 needed people say no light/);
+    expect(s.evidence?.some((e) => e.role === "estimate")).toBe(false);
   });
   it("live community evidence always beats an estimate", () => {
     const s = resolve("agege", ["a", "b", "c"].map((w, i) => rep("off", i + 1, w, { areaId: "agege" })), [], { light: 10, known: 10 });

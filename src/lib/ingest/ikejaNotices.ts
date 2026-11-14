@@ -17,6 +17,13 @@ const tag = (xml: string, name: string) => xml.match(new RegExp(`<${name}[^>]*>(
 
 export function parseRss(xml: string): FeedItem[] {
   if (!/<rss[\s>]/i.test(xml)) throw new Error("Ikeja Electric: response is not RSS");
+  // Structural checks so a truncated response fails instead of looking like "0 items".
+  const body = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
+  if (!/<\/rss>\s*$/i.test(body.trim())) throw new Error("Ikeja Electric: RSS is truncated (no closing </rss>)");
+  if (!/<channel[\s>][\s\S]*<\/channel>/i.test(body)) throw new Error("Ikeja Electric: RSS has no complete <channel>");
+  const opens = (body.match(/<item[\s>]/gi) ?? []).length;
+  const closes = (body.match(/<\/item>/gi) ?? []).length;
+  if (opens !== closes) throw new Error(`Ikeja Electric: ${opens} <item> openings but ${closes} closings`);
   return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((m) => {
     const it = m[1];
     const link = decodeEntities(tag(it, "link")).trim();
@@ -34,10 +41,13 @@ export function parseRss(xml: string): FeedItem[] {
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// An alias shared by several areas (e.g. "lekki") doesn't identify any one of them, so it's never used.
+const aliasCount = new Map<string, number>();
+for (const a of AREAS) for (const al of a.aliases ?? []) aliasCount.set(al.toLowerCase(), (aliasCount.get(al.toLowerCase()) ?? 0) + 1);
 const matchers = AREAS.map((a) => ({
   id: a.id,
-  // Names and long aliases only; short aliases like "vi" would cause false matches.
-  re: new RegExp(`\\b(${[a.name, ...(a.aliases ?? []).filter((x) => x.length >= 4)].map(escape).join("|")})\\b`, "i"),
+  // Full names, plus long aliases unique to this area; short aliases like "vi" would cause false matches.
+  re: new RegExp(`\\b(${[a.name, ...(a.aliases ?? []).filter((x) => x.length >= 4 && aliasCount.get(x.toLowerCase()) === 1)].map(escape).join("|")})\\b`, "i"),
 }));
 
 /** Supported areas named in the text. Name matching only — never inferred. */

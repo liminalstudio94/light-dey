@@ -32,7 +32,17 @@ export async function ingestPartnerObservation(store: DataStore, authHeader: str
   if (t > now.getTime() + 2 * 60_000) return { ok: false, status: 400, code: "invalid", message: "observedAt is in the future" };
   if (now.getTime() - t > EVIDENCE_CONFIG.partnerMaxAgeMinutes * 60_000) return { ok: false, status: 400, code: "invalid", message: `observedAt is older than ${EVIDENCE_CONFIG.partnerMaxAgeMinutes} minutes` };
 
-  if ((await store.countObservationsSince(partner.sourceId, new Date(now.getTime() - 3_600_000))) >= PARTNER_RATE_LIMIT_PER_HOUR) {
+  // Coverage is an authorization boundary, not a description.
+  if (!partner.allowedAreas.includes(o.neighbourhoodId)) {
+    return { ok: false, status: 403, code: "forbidden_area", message: "This key is not approved for that neighbourhood" };
+  }
+  // An externalId stays bound to the area it was first filed under.
+  const existingArea = await store.observationScope(partner.sourceId, o.externalId);
+  if (existingArea !== undefined && existingArea !== o.neighbourhoodId) {
+    return { ok: false, status: 409, code: "external_id_conflict", message: "externalId was already used for a different neighbourhood" };
+  }
+  // Atomic, per key; every accepted attempt counts, including updates to an existing externalId.
+  if (!(await store.consumePartnerQuota(partner.keyId, PARTNER_RATE_LIMIT_PER_HOUR, now))) {
     return { ok: false, status: 429, code: "rate_limited", message: "Hourly limit reached for this key" };
   }
 
@@ -52,6 +62,6 @@ export async function ingestPartnerObservation(store: DataStore, authHeader: str
       neighbourhoodIds: [],
     },
   ]);
-  if (written) await store.recordVerificationEvent({ sourceId: partner.sourceId, observationExternalId: o.externalId, event: "partner_ingested", actor: partner.sourceId });
+  if (written) await store.recordVerificationEvent({ sourceId: partner.sourceId, observationExternalId: o.externalId, event: "partner_ingested", actor: `key:${partner.keyId}` });
   return { ok: true, written: written > 0 };
 }
