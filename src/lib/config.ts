@@ -62,3 +62,23 @@ export const EVIDENCE_CONFIG = {
   /** A deciding official reading older than this lowers confidence from high to medium. */
   officialHighConfidenceMaxMinutes: 60,
 } as const;
+
+/** Light Dey Sensor rules (see SENSORS.md). */
+export const SENSOR_CONFIG = {
+  /** A heartbeat this recent, from a healthy grid-direct sensor, is strong (measured) evidence. */
+  freshMinutes: 10,
+  /** No heartbeat for this long => offline. Silence is never treated as an outage. */
+  offlineMinutes: 15,
+  /** Heartbeats whose device clock is further off than this are rejected (replay protection). */
+  maxClockSkewSeconds: 300,
+  /** Clock skew above this marks the device degraded. */
+  degradedClockSkewSeconds: 120,
+  /** Minimum gap between accepted heartbeats from one device. */
+  minIntervalSeconds: 20,
+  /** Nonces are remembered at least this long (must exceed 2 × maxClockSkewSeconds). */
+  nonceTtlMinutes: 60,
+  /** Battery below this (while not on grid) marks the device degraded. */
+  lowBatteryPct: 20,
+  /** Raw heartbeats older than this are pruned. */
+  heartbeatRetentionDays: 7,
+} as const;

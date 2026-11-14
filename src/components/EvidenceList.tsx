@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { FRESHNESS_LABEL, TIER_LABEL, lagosTime, timeAgo } from "@/lib/format";
+import { EVIDENCE_COUNT_NOUN, EVIDENCE_TYPE_LABEL, FRESHNESS_LABEL, lagosTime, timeAgo } from "@/lib/format";
 import { isTrustedSourceUrl } from "@/lib/sources/registry";
 import type { EvidenceItem } from "@/lib/types";
 
@@ -10,11 +10,12 @@ const ROLE_LABEL: Record<EvidenceItem["role"], string> = {
   context: "Context only",
   estimate: "Estimate — not live",
 };
-const TIER_CLASS: Record<1 | 2 | 3 | 4, string> = {
-  1: "bg-ink text-white",
-  2: "bg-brand text-white",
-  3: "bg-bg text-ink-2 border border-line",
-  4: "border border-dashed border-ink-3 text-ink-2",
+const TYPE_CLASS: Record<EvidenceItem["evidenceType"], string> = {
+  measured: "bg-ink text-white",
+  official: "bg-ink text-white",
+  reported: "bg-bg text-ink-2 border border-line",
+  estimated: "border border-dashed border-ink-3 text-ink-2",
+  proxy: "border border-dashed border-ink-3 text-ink-3",
 };
 
 /** Transparent attribution: who said what, when, how fresh, how trusted. */
@@ -25,7 +26,7 @@ export function EvidenceList({ items, now }: { items: EvidenceItem[]; now: numbe
       {items.map((e, i) => (
         <li key={`${e.sourceId}-${i}`} className="p-4">
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
-            <span className={`rounded-full px-2 py-0.5 ${TIER_CLASS[e.tier]}`}>{TIER_LABEL[e.tier]}</span>
+            <span className={`rounded-full px-2 py-0.5 ${TYPE_CLASS[e.evidenceType]}`}>{EVIDENCE_TYPE_LABEL[e.evidenceType]}</span>
             <span className="text-ink-2">{e.sourceName}</span>
             <span className={e.role === "conflicting" ? "text-off" : e.role === "decisive" ? "text-on" : "text-ink-3"}>· {ROLE_LABEL[e.role]}</span>
           </div>
@@ -38,7 +39,7 @@ export function EvidenceList({ items, now }: { items: EvidenceItem[]; now: numbe
             ) : (
               <span>Historical pattern</span>
             )}
-            {e.count > 1 && <span>· {e.count} {e.tier === 4 ? "hours of data" : "independent reports"}</span>}
+            {e.count > 1 && <span>· {e.count} {EVIDENCE_COUNT_NOUN[e.evidenceType]}</span>}
             {isTrustedSourceUrl(e.url) && (
               <a href={e.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 font-medium text-brand">
                 Source <ExternalLink className="h-3 w-3" aria-hidden />

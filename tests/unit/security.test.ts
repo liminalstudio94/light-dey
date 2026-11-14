@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AREAS } from "@/lib/areas";
 import { DISCO_AREAS } from "@/lib/sources/discos";
 import { SOURCES } from "@/lib/sources/registry";
+import { isSourceEnabled } from "@/lib/ingest/switches";
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -18,7 +19,7 @@ describe("credential exposure", () => {
     for (const f of src) {
       const code = readFileSync(f, "utf8");
       if (!code.startsWith('"use client"')) continue;
-      expect(code, f).not.toMatch(/SUPABASE_SECRET_KEY|SERVICE_ROLE|REPORTER_HASH_SECRET|POSTGRES_URL/);
+      expect(code, f).not.toMatch(/SUPABASE_SECRET_KEY|SERVICE_ROLE|REPORTER_HASH_SECRET|POSTGRES_URL|SENSOR_MASTER_SECRET|deviceSecret/);
       expect(code, f).not.toMatch(/lib\/store|lib\/server\/(identity|data)"/);
     }
   });
@@ -73,7 +74,12 @@ describe("database client", () => {
 
 describe("source registry", () => {
   it("only marks sources active when they are live or derived", () => {
-    for (const s of SOURCES) if (s.active) expect(["live", "derived"], s.id).toContain(s.integration);
+    // Active = used by the engine. Sensors are active (implemented) even before any device exists.
+    // Active = usable by the engine. Sensors are active (implemented) even before any device exists;
+    // IODA is active in the DB but gated OFF by its opt-in switch until permission is granted.
+    for (const s of SOURCES) if (s.active) expect(["live", "derived", "awaiting_hardware", "awaiting_permission"], s.id).toContain(s.integration);
+    for (const s of SOURCES) if (["rejected", "awaiting_credentials", "unavailable"].includes(s.integration)) expect(s.active, s.id).toBe(false);
+    for (const s of SOURCES) if (s.integration === "awaiting_permission") expect(isSourceEnabled(s.id), `${s.id} must default OFF`).toBe(false);
   });
   // Yaba stays unmapped until an official source names its DisCo; update this test with the citation if that changes.
   it("DisCo mappings cite an official source and never include Yaba", () => {

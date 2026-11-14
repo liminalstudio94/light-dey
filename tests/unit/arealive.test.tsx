@@ -50,13 +50,13 @@ describe("AreaLive (Qodo PR #4)", () => {
     render(<AreaLive areaId="ajah" initial={overview([s])} />);
     expect(screen.getByText("Latest evidence").nextElementSibling).toHaveTextContent("5 min ago");
   });
-  it("a lone verified report gets 'A verified reporter says… confirm?', not 'no one reported' (pass 3, #3)", () => {
+  it("a lone verified report shows as Reported straight away, not 'no one reported' (pass 3, #3; sensors brief)", () => {
     const obs: Observation = { ...eko0, id: "v", sourceId: "verified:ada-yaba", externalId: "v1", scope: "neighbourhood", scopeRef: "yaba", kind: "status_report", status: "off", valueNum: null, url: null, tier: 2 };
     const s = resolveAreaStatus({ community: aggregateAreaStatus("yaba", [], NOW), observations: [obs], now: NOW });
-    expect(s.mapState).toBe("UNKNOWN");
+    expect(s.mapState).toBe("COMMUNITY_OFF");
     render(<AreaLive areaId="yaba" initial={overview([s])} />);
-    expect(screen.getByRole("note")).toHaveTextContent("A verified reporter says no light. Can you confirm?");
-    expect(screen.getByRole("note")).not.toHaveTextContent(/No one/);
+    expect(screen.getAllByText("Reported: no light").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/No one has reported/)).toBeNull();
   });
 });
 

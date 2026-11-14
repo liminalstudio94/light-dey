@@ -311,7 +311,9 @@ describe("Qodo re-review on PR #3", () => {
   it("key issuing derives trust tier from the id/kind; a verified reporter can't get tier 1 (#6)", async () => {
     const { validateSourceSpec } = await import("../../scripts/partner-key-rules.mjs");
     expect(validateSourceSpec({ id: "verified:ada-yaba", kind: "verified_reporter" })).toEqual({ tier: 2 });
-    expect(validateSourceSpec({ id: "partner:acme-estate", kind: "verified_partner" })).toEqual({ tier: 1 });
+    expect(validateSourceSpec({ id: "partner:acme-estate", kind: "verified_partner" })).toEqual({ tier: 2 }); // human partner = report
+    expect(validateSourceSpec({ id: "partner:ie-ops", kind: "official_disco" })).toEqual({ tier: 1 });
+    expect(() => validateSourceSpec({ id: "partner:acme-estate", kind: "verified_partner", tier: "1" })).toThrow(/always tier 2/);
     expect(() => validateSourceSpec({ id: "verified:ada-yaba", kind: "verified_reporter", tier: "1" })).toThrow(/always tier 2/);
     expect(() => validateSourceSpec({ id: "verified:ada-yaba", kind: "verified_partner" })).toThrow(/verified_reporter/);
     expect(() => validateSourceSpec({ id: "partner:acme", kind: "verified_reporter" })).toThrow(/verified_partner or official_disco/);

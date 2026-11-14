@@ -41,6 +41,7 @@ export interface AreaStatus {
   explanation?: string;
   estimate?: Estimate | null;
   disco?: string | null;
+  sensors?: SensorCoverage;
 }
 
 export interface RecentUpdate {
@@ -71,10 +72,48 @@ export interface Overview {
  * "COMMUNITY_*" is ordinary reports (3+ independent people); "ESTIMATED_*" is
  * history only and never live; "UNKNOWN" means not enough trustworthy data.
  */
-export type MapState = "CONFIRMED_ON" | "CONFIRMED_OFF" | "COMMUNITY_ON" | "COMMUNITY_OFF" | "CONFLICTING" | "ESTIMATED_ON" | "ESTIMATED_OFF" | "UNKNOWN";
+export type MapState =
+  | "CONFIRMED_ON"
+  | "CONFIRMED_OFF"
+  | "LIKELY_ON"
+  | "LIKELY_OFF"
+  | "COMMUNITY_ON"
+  | "COMMUNITY_OFF"
+  | "CONFLICTING"
+  | "ESTIMATED_ON"
+  | "ESTIMATED_OFF"
+  | "UNKNOWN";
+
+/** How an item of evidence was obtained. */
+export type EvidenceType = "measured" | "official" | "reported" | "estimated" | "proxy";
+
+/** Kinds of source (mirrors lightdey.sources.kind). */
+export type SourceKind = "official_grid" | "official_disco" | "regulator" | "verified_partner" | "verified_reporter" | "community" | "estimate" | "telemetry" | "proxy" | "device_provider";
+
+/** Latest state of one opt-in power sensor (no household identity, neighbourhood-level location only). */
+export interface SensorState {
+  deviceId: string; // anonymised, e.g. ldd_8f3k…
+  areaId: string;
+  provider: string;
+  /** Where the sensor reads mains: before the generator changeover (sees only grid) or after it (grid OR generator). */
+  supplyPoint: "grid_direct" | "after_changeover" | "unknown";
+  mains: "on" | "off" | "unknown";
+  /** What the device itself is running on right now. Never treated as grid evidence. */
+  powerSource: "grid" | "generator" | "inverter" | "solar" | "ups" | "battery" | "unknown";
+  observedAt: string; // last accepted heartbeat (server time)
+  health: "good" | "degraded" | "offline";
+  healthReasons: string[];
+  networkHash: string;
+}
+
+export interface SensorCoverage {
+  total: number;
+  online: number;
+  offline: number;
+}
 
 export type ObservationScope = "national" | "disco" | "neighbourhood";
-export type ObservationKind = "grid_total" | "disco_allocation" | "notice" | "status_report";
+export type ObservationKind = "grid_total" | "disco_allocation" | "notice" | "status_report" | "connectivity";
 
 /** A raw, attributable observation from a non-community source. */
 export interface Observation {
@@ -95,6 +134,8 @@ export interface Observation {
   neighbourhoodIds: string[];
   /** Trust tier of the producing source (partner sources carry their own). */
   tier: 1 | 2 | 3 | 4;
+  /** Kind of the producing source; decides whether a status claim is official or a human report. */
+  sourceKind?: SourceKind;
 }
 
 export type EvidenceRole = "decisive" | "supporting" | "conflicting" | "context" | "estimate";
@@ -104,6 +145,7 @@ export interface EvidenceItem {
   sourceId: string;
   sourceName: string;
   tier: 1 | 2 | 3 | 4;
+  evidenceType: EvidenceType;
   role: EvidenceRole;
   status: PowerStatus | null;
   summary: string;

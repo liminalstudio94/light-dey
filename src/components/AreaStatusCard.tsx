@@ -2,7 +2,7 @@ import Link from "next/link";
 import { MapPin, Users } from "lucide-react";
 import { getArea } from "@/lib/areas";
 import { STATUS_CONFIG } from "@/lib/config";
-import { CONFIDENCE_LABEL, FRESHNESS_LABEL, TIER_LABEL, timeAgo } from "@/lib/format";
+import { CONFIDENCE_LABEL, EVIDENCE_COUNT_NOUN, EVIDENCE_TYPE_LABEL, FRESHNESS_LABEL, timeAgo } from "@/lib/format";
 import { latestEvidenceAt } from "@/lib/share";
 import type { AreaStatus } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
@@ -40,7 +40,8 @@ export function AreaStatusCard({ status, now }: { status: AreaStatus; now: numbe
       <p className="mt-3 border-t border-line pt-3 text-xs text-ink-2">
         {decisive ? (
           <>
-            <span className="font-semibold">{TIER_LABEL[decisive.tier]}</span> · {decisive.tier === 3 ? `${decisive.count} independent reports` : decisive.tier === 4 ? "not live" : decisive.sourceName} · {CONFIDENCE_LABEL[status.confidence]}
+            <span className="font-semibold">{EVIDENCE_TYPE_LABEL[decisive.evidenceType]}</span> ·{" "}
+            {decisive.evidenceType === "estimated" ? "not live" : decisive.sourceId === "community" || decisive.evidenceType === "measured" ? `${decisive.count} ${EVIDENCE_COUNT_NOUN[decisive.evidenceType]}` : decisive.sourceName} · {CONFIDENCE_LABEL[status.confidence]}
           </>
         ) : unknown && status.leaning ? (
           `${status.leaning === "on" ? status.onReporters : status.offReporters} of ${STATUS_CONFIG.confirmationThreshold} needed say ${status.leaning === "on" ? "light dey" : "no light"}`

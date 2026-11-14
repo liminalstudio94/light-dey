@@ -9,7 +9,7 @@ import { AreaStatusCard } from "./AreaStatusCard";
 import { LagosMap } from "./LagosMap";
 import { StatusDot } from "./StatusBadge";
 
-const ORDER: MapState[] = ["CONFIRMED_ON", "COMMUNITY_ON", "CONFIRMED_OFF", "COMMUNITY_OFF", "CONFLICTING", "ESTIMATED_ON", "ESTIMATED_OFF", "UNKNOWN"];
+const ORDER: MapState[] = ["CONFIRMED_ON", "LIKELY_ON", "COMMUNITY_ON", "CONFIRMED_OFF", "LIKELY_OFF", "COMMUNITY_OFF", "CONFLICTING", "ESTIMATED_ON", "ESTIMATED_OFF", "UNKNOWN"];
 const RANK = Object.fromEntries(ORDER.map((m, i) => [m, i])) as Record<MapState, number>;
 const ms = (s: AreaStatus): MapState => s.mapState ?? "UNKNOWN";
 
@@ -87,10 +87,11 @@ export function LiveExplorer({ statuses, now, defaultView = "map", mapHeight = 4
 
 function MapLegend() {
   const rows: { m: MapState; label: string }[] = [
-    { m: "CONFIRMED_OFF", label: "Dark ring = confirmed (official / verified)" },
-    { m: "COMMUNITY_ON", label: `Plain = reported by ${STATUS_CONFIG.confirmationThreshold}+ neighbours` },
-    { m: "ESTIMATED_ON", label: "Dashed = estimate from history, not live" },
-    { m: "UNKNOWN", label: "Grey = not enough verified data" },
+    { m: "CONFIRMED_OFF", label: "Dark ring = confirmed (measured by a sensor or official)" },
+    { m: "LIKELY_OFF", label: "Filled, dashed ring = likely (indirect evidence)" },
+    { m: "COMMUNITY_ON", label: `Plain = reported (${STATUS_CONFIG.confirmationThreshold}+ neighbours or a verified reporter)` },
+    { m: "ESTIMATED_ON", label: "Hollow, dashed = prediction from history, not live" },
+    { m: "UNKNOWN", label: "Grey = not enough current evidence" },
   ];
   return (
     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2" aria-label="Map legend">
