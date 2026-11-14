@@ -10,34 +10,18 @@ import { createHash, randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import postgres from "postgres";
 import { validateSourceSpec } from "./partner-key-rules.mjs";
+import { deactivateSource, revokeKey, upsertSourceForKey } from "./partner-ops.mjs";
 
-const { values: a } = parseArgs({ options: { id: { type: "string" }, name: { type: "string" }, kind: { type: "string" }, tier: { type: "string" }, coverage: { type: "string" }, areas: { type: "string" }, revoke: { type: "string" }, deactivate: { type: "string" } } });
+const { values: a } = parseArgs({ options: { id: { type: "string" }, name: { type: "string" }, kind: { type: "string" }, tier: { type: "string" }, coverage: { type: "string" }, areas: { type: "string" }, revoke: { type: "string" }, deactivate: { type: "string" }, reactivate: { type: "boolean" } } });
 const sql = postgres(process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL, { ssl: "require", prepare: false, max: 1 });
 try {
+  const exec = (tx) => (text, params) => tx.unsafe(text, params);
   if (a.revoke) {
-    // One transaction: revoke the key AND withdraw every unexpired claim it made (audited).
-    const out = await sql.begin(async (tx) => {
-      const [k] = await tx`update lightdey.partner_keys set revoked_at = now() where id = ${a.revoke} and revoked_at is null returning id, source_id`;
-      if (!k) return null;
-      const withdrawn = await tx`
-        update lightdey.observations o set valid_until = now()
-        where o.valid_until > now() and exists (
-          select 1 from lightdey.verification_events e where e.observation_id = o.id and e.actor = ${"key:" + k.id} and e.event = 'partner_ingested')
-        returning o.id`;
-      for (const w of withdrawn) await tx`insert into lightdey.verification_events (observation_id, event, actor, note) values (${w.id}, 'removed', 'operator', ${"key revoked: " + k.id})`;
-      return { source: k.source_id, withdrawn: withdrawn.length };
-    });
-    console.log(out ? `Revoked ${a.revoke} (${out.source}); withdrew ${out.withdrawn} live claim(s).` : "No active key with that id");
+    const out = await sql.begin((tx) => revokeKey(exec(tx), a.revoke));
+    console.log(out ? `Revoked ${a.revoke} (${out.source}); withdrew ${out.withdrawn} claim(s) it last wrote.` : "No active key with that id");
   } else if (a.deactivate) {
-    // Switch a whole partner off at once: no new writes (inactive source), and all live claims withdrawn.
-    const out = await sql.begin(async (tx) => {
-      const [s] = await tx`update lightdey.sources set is_active = false where id = ${a.deactivate} and id ~ '^(partner|verified):' returning id`;
-      if (!s) return null;
-      const withdrawn = await tx`update lightdey.observations set valid_until = now() where source_id = ${s.id} and valid_until > now() returning id`;
-      for (const w of withdrawn) await tx`insert into lightdey.verification_events (observation_id, event, actor, note) values (${w.id}, 'removed', 'operator', 'source deactivated')`;
-      return withdrawn.length;
-    });
-    console.log(out === null ? "No partner/verified source with that id" : `Deactivated ${a.deactivate}; withdrew ${out} live claim(s). Issuing a new key reactivates it.`);
+    const out = await sql.begin((tx) => deactivateSource(exec(tx), a.deactivate));
+    console.log(out ? `Deactivated ${a.deactivate}: revoked ${out.keysRevoked} key(s), withdrew ${out.withdrawn} claim(s). Re-approve later with --reactivate (old keys stay revoked).` : "No partner/verified source with that id");
   } else {
     const { tier } = validateSourceSpec({ id: a.id, kind: a.kind, tier: a.tier }); // tier derived from id + kind
     if (!a.name || !a.coverage) throw new Error("--name and --coverage are required");
@@ -47,9 +31,7 @@ try {
     const unknown = areas.filter((x) => !known.has(x));
     if (unknown.length) throw new Error(`Unknown neighbourhood id(s): ${unknown.join(", ")}`);
     if (a.id.startsWith("verified:") && areas.length > 1) throw new Error("A verified reporter covers one home neighbourhood");
-    await sql`insert into lightdey.sources (id, name, kind, trust_tier, coverage, credentials_required, is_active, notes)
-              values (${a.id}, ${a.name}, ${a.kind}, ${tier}, ${a.coverage}, true, true, 'Approved via scripts/partner-key.mjs')
-              on conflict (id) do update set name = excluded.name, kind = excluded.kind, trust_tier = excluded.trust_tier, coverage = excluded.coverage, is_active = true`;
+    await sql.begin((tx) => upsertSourceForKey(exec(tx), { id: a.id, name: a.name, kind: a.kind, tier, coverage: a.coverage, reactivate: a.reactivate }));
     if (a.id.startsWith("verified:")) {
       const r = await sql`update lightdey.partner_keys set revoked_at = now() where source_id = ${a.id} and revoked_at is null returning id`;
       if (r.length) console.log(`Revoked ${r.length} previous key(s) for ${a.id} (one active key per verified reporter).`);
