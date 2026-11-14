@@ -38,8 +38,22 @@ export class MemoryStore implements DataStore {
   }
 
   /** Mirrors PostgresStore: only unexpired rows from active sources (registry or approved partner). */
+  /** Mirrors PostgresStore: newest reading per measure first, THEN drop it if expired; only active sources. */
   async listObservations(now: Date) {
-    return this.observations.filter((o) => Date.parse(o.validUntil) >= now.getTime() && (getSource(o.sourceId)?.active || this.partnerTier(o.sourceId) !== undefined));
+    const t = now.getTime();
+    const newest = new Map<string, Observation>();
+    const notices: Observation[] = [];
+    for (const o of this.observations) {
+      if (o.kind === "notice") {
+        notices.push(o);
+        continue;
+      }
+      if (Date.parse(o.observedAt) > t + 2 * 60_000) continue;
+      const key = `${o.sourceId}|${o.kind}|${o.scope}|${o.scopeRef ?? ""}`;
+      const prev = newest.get(key);
+      if (!prev || Date.parse(o.observedAt) > Date.parse(prev.observedAt)) newest.set(key, o);
+    }
+    return [...newest.values(), ...notices].filter((o) => Date.parse(o.validUntil) >= t && (getSource(o.sourceId)?.active || this.partnerTier(o.sourceId) !== undefined));
   }
   async upsertObservations(rows: NewObservation[], opts: { audit?: { event: "partner_ingested"; actor: string } } = {}) {
     let n = 0;

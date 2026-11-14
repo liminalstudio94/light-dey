@@ -15,6 +15,12 @@ export function shareText(areaName: string, s: AreaStatus, now = Date.now()): st
   if (s.mapState === "ESTIMATED_ON" || s.mapState === "ESTIMATED_OFF") {
     return `No live light reports for ${areaName}. Is there light where you are? Report it on Light Dey?:`;
   }
+  if (s.mapState === "CONFLICTING") {
+    // Quote neighbour counts only when the neighbours themselves disagree; otherwise say sources disagree.
+    return s.onReporters > 0 && s.offReporters > 0
+      ? `Light status in ${areaName} is mixed — ${s.onReporters} say light dey, ${s.offReporters} say no light.${when} Help confirm on Light Dey?:`
+      : `Sources disagree about light in ${areaName} right now.${when} Help confirm on Light Dey?:`;
+  }
   switch (s.state) {
     case "LIGHT":
       return `LIGHT DEY! ${areaName} is currently reporting electricity. ${s.confirmingUsers} people confirmed in the last hour.${when}${conf} Check Light Dey? before you go:`;

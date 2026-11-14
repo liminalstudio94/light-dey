@@ -82,13 +82,15 @@ export class PostgresStore implements DataStore {
     const rows = await this.sql<
       { id: string; source_id: string; external_id: string; scope: Observation["scope"]; scope_ref: string | null; kind: Observation["kind"]; status: Observation["status"]; value_num: number | null; title: string | null; url: string | null; observed_at: Date; valid_until: Date; tier: number; areas: string[] | null }[]
     >`
-      with candidates as (
+      -- Newest reading per measure FIRST, then drop it if expired: an expired newer reading must
+      -- never let an older, longer-lived one "revive". (2-day bound: nothing older can be valid.)
+      with newest as (
         select distinct on (source_id, kind, scope, coalesce(scope_ref, '')) *
         from lightdey.observations
-        where valid_until >= ${now} and kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes'
+        where kind <> 'notice' and observed_at <= ${now}::timestamptz + interval '2 minutes' and observed_at >= ${now}::timestamptz - interval '2 days'
         order by source_id, kind, scope, coalesce(scope_ref, ''), observed_at desc
       ), picked as (
-        select * from candidates
+        select * from newest where valid_until >= ${now}
         union all
         select * from lightdey.observations where valid_until >= ${now} and kind = 'notice'
       )
